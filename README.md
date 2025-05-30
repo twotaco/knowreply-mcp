@@ -1,203 +1,140 @@
-# MCP Server
+# Mock Centralized Provider (MCP) Server
 
-The Mock Centralized Provider (MCP) Server provides a unified interface to interact with various third-party provider APIs in a mocked or simulated environment. This is useful for development and testing when direct access to live APIs is not desirable or available.
+The Mock Centralized Provider (MCP) Server is a Node.js application built with Express that provides a unified interface to interact with mock versions of various third-party services like Stripe and HubSpot. It's designed for development and testing purposes, allowing you to simulate API calls without hitting actual external services.
+
+## Features
+
+-   **Unified Interface**: Access different mock providers (Stripe, HubSpot) through a consistent API endpoint structure.
+-   **Mock Implementations**: Includes mock handlers for common actions like fetching customer data, managing subscriptions, retrieving contact information, etc.
+-   **Request Validation**: Uses Zod to validate incoming request arguments and authentication details.
+-   **Authentication**: Protects server access using an internal API key and expects third-party API keys (mocked) to be passed for individual provider calls.
 
 ## Setup
 
-1.  **Clone the Repository** (or ensure you have the `mcp_server` directory and its contents).
+Follow these steps to set up and run the MCP server locally:
+
+1.  **Clone the repository:**
     ```bash
-    # git clone <repository_url> # If applicable
-    # cd <path_to_repository>/mcp_server
+    git clone <repository_url>
+    cd <repository_directory>
     ```
 
-2.  **Navigate to the `mcp_server` directory:**
-    ```bash
-    cd /path/to/your/mcp_server 
-    ```
-    (Replace `/path/to/your/mcp_server` with the actual path on your system, e.g., if it's in `/app/mcp_server` in a development container).
-
-3.  **Install Dependencies:**
+2.  **Install dependencies:**
     ```bash
     npm install
     ```
 
-## Environment Variables
-
-A `.env` file is required in the root of the `mcp_server` directory to configure the server.
-
-Create a file named `.env` with the following content:
-
-```env
-PORT=3001
-MCP_SERVER_INTERNAL_API_KEY=supersecretkey_for_now_change_later
-```
-
-**Variables:**
-
-*   `PORT`: The port on which the MCP server will listen. Defaults to `3000` if not set, but `3001` is recommended to avoid conflicts.
-*   `MCP_SERVER_INTERNAL_API_KEY`: A shared secret key used to authorize requests to the MCP server. Ensure this is kept secure.
+3.  **Configure environment variables:**
+    Create a `.env` file by copying the example:
+    ```bash
+    cp .env.example .env
+    ```
+    Open the `.env` file and set the `MCP_SERVER_INTERNAL_API_KEY`. This is a secret key you define to protect access to this MCP server.
+    ```env
+    MCP_SERVER_INTERNAL_API_KEY="YOUR_CHOSEN_STRONG_INTERNAL_API_KEY"
+    ```
+    The `.env` file can also store placeholder third-party API keys for convenience during testing, but these are passed in the request body, not directly used by the server configuration.
 
 ## Running the Server
 
-To start the server, run the following command from the `mcp_server` directory:
+To start the MCP server, run:
 
 ```bash
 npm start
 ```
 
-Expected output (or similar):
+The server will typically start on port 3000 (or as configured). You should see a message like:
+`MCP Server listening on port 3000`
+`MCP Server Internal API Key Loaded: true` (or false if not set)
 
-```
-MCP Server listening at http://localhost:3001
-```
+## Calling MCP Endpoints
 
-The server will also log requests and responses to the console.
+MCP endpoints follow a structured path and require specific headers and a JSON body.
 
-## Testing MCP Endpoints
+-   **Base URL Structure**: `/mcp/:provider/:action`
+    -   `:provider`: The name of the third-party service (e.g., `stripe`, `hubspot`).
+    -   `:action`: The specific function to call on that provider (e.g., `getCustomerByEmail`, `getContactByEmail`).
 
-### General Notes:
+-   **Headers**:
+    -   `Content-Type: application/json`
+    -   `x-internal-api-key`: Your defined `MCP_SERVER_INTERNAL_API_KEY` from the `.env` file.
 
-*   All MCP calls are `POST` requests.
-*   The base URL path for MCP calls is `/mcp/:provider/:action`.
-    *   Replace `:provider` with the name of the provider (e.g., `stripe`).
-    *   Replace `:action` with the name of the action (e.g., `getCustomerByEmail`).
-*   Requests must include the `Content-Type: application/json` header.
-*   Requests must include the `X-Internal-API-Key` header with the value specified in your `.env` file for `MCP_SERVER_INTERNAL_API_KEY`.
+-   **JSON Body Structure**:
+    ```json
+    {
+      "args": {
+        // Arguments specific to the :action
+      },
+      "auth": {
+        "token": "THIRD_PARTY_API_KEY_PLACEHOLDER" // The (mock) API key for the target :provider
+      }
+    }
+    ```
 
-### `stripe.getCustomerByEmail` Examples
+### Example `curl` Commands
 
-Here are `curl` examples for testing the `stripe.getCustomerByEmail` MCP:
+Replace placeholders like `YOUR_MCP_INTERNAL_API_KEY`, `YOUR_STRIPE_API_KEY_HERE`, and `YOUR_HUBSPOT_API_KEY_HERE` with your actual values.
 
-**1. Valid Request (Customer Found)**
+1.  **Stripe - Get Customer By Email:**
+    ```bash
+    curl -X POST http://localhost:3000/mcp/stripe/getCustomerByEmail \
+    -H "Content-Type: application/json" \
+    -H "x-internal-api-key: YOUR_MCP_INTERNAL_API_KEY" \
+    -d '{
+      "args": {
+        "email": "customer@example.com"
+      },
+      "auth": {
+        "token": "sk_test_YOUR_STRIPE_API_KEY_HERE"
+      }
+    }'
+    ```
 
-This request should succeed and return mock customer data.
+2.  **HubSpot - Get Contact By Email:**
+    ```bash
+    curl -X POST http://localhost:3000/mcp/hubspot/getContactByEmail \
+    -H "Content-Type: application/json" \
+    -H "x-internal-api-key: YOUR_MCP_INTERNAL_API_KEY" \
+    -d '{
+      "args": {
+        "email": "contact@example.com"
+      },
+      "auth": {
+        "token": "YOUR_HUBSPOT_API_KEY_HERE"
+      }
+    }'
+    ```
 
-```bash
-curl -X POST http://localhost:3001/mcp/stripe/getCustomerByEmail \
--H "Content-Type: application/json" \
--H "X-Internal-API-Key: supersecretkey_for_now_change_later" \
--d '{
-  "args": { "email": "customer@example.com" },
-  "auth": { "token": "sk_test_mock_stripe_key" }
-}'
-```
-Expected Response:
-```json
-{
-  "success": true,
-  "data": {
-    "id": "cus_mock_12345",
-    "name": "Test Customer",
-    "email": "customer@example.com",
-    "created": "2024-01-01T10:00:00Z"
-  },
-  "message": "Customer found."
-}
-```
+3.  **Stripe - Get Last Invoice for a Customer:**
+    ```bash
+    curl -X POST http://localhost:3000/mcp/stripe/getLastInvoice \
+    -H "Content-Type: application/json" \
+    -H "x-internal-api-key: YOUR_MCP_INTERNAL_API_KEY" \
+    -d '{
+      "args": {
+        "customerId": "cus_mock_12345"
+      },
+      "auth": {
+        "token": "sk_test_YOUR_STRIPE_API_KEY_HERE"
+      }
+    }'
+    ```
 
-**2. Valid Request (Customer Not Found)**
+## Available Mock Handlers
 
-This request should succeed but indicate that the customer was not found.
+The server currently supports the following mock providers and actions:
 
-```bash
-curl -X POST http://localhost:3001/mcp/stripe/getCustomerByEmail \
--H "Content-Type: application/json" \
--H "X-Internal-API-Key: supersecretkey_for_now_change_later" \
--d '{
-  "args": { "email": "notfound@example.com" },
-  "auth": { "token": "sk_test_mock_stripe_key" }
-}'
-```
-Expected Response:
-```json
-{
-  "success": true,
-  "data": null,
-  "message": "Customer not found."
-}
-```
+**Stripe (`/mcp/stripe/*`)**
+*   `getCustomerByEmail`
+*   `createCheckoutSession`
+*   `getLastInvoice`
+*   `getNextBillingDate`
+*   `issueRefund`
 
-**3. Invalid Email (Zod Validation Error)**
+**HubSpot (`/mcp/hubspot/*`)**
+*   `getContactByEmail`
+*   `updateContact`
+*   `getTicketStatus`
+*   `createTicket`
 
-This request provides an improperly formatted email, triggering Zod validation.
-
-```bash
-curl -X POST http://localhost:3001/mcp/stripe/getCustomerByEmail \
--H "Content-Type: application/json" \
--H "X-Internal-API-Key: supersecretkey_for_now_change_later" \
--d '{
-  "args": { "email": "invalid-email" },
-  "auth": { "token": "sk_test_mock_stripe_key" }
-}'
-```
-Expected Response:
-```json
-{
-  "success": false,
-  "message": "Invalid arguments.",
-  "errors": {
-    "email": [
-      "Invalid email format."
-    ]
-  },
-  "data": null
-}
-```
-
-**4. Missing `args` in Payload (Server Validation)**
-
-This request is missing the `args` field in the JSON payload.
-
-```bash
-curl -X POST http://localhost:3001/mcp/stripe/getCustomerByEmail \
--H "Content-Type: application/json" \
--H "X-Internal-API-Key: supersecretkey_for_now_change_later" \
--d '{
-  "auth": { "token": "sk_test_mock_stripe_key" }
-}'
-```
-Expected Response (Status 400):
-```json
-{
-  "error": "Missing 'args' or 'auth' in request body"
-}
-```
-
-**5. Missing `X-Internal-API-Key` Header (Auth Failure)**
-
-This request is missing the required `X-Internal-API-Key` header.
-
-```bash
-curl -X POST http://localhost:3001/mcp/stripe/getCustomerByEmail \
--H "Content-Type: application/json" \
--d '{
-  "args": { "email": "customer@example.com" },
-  "auth": { "token": "sk_test_mock_stripe_key" }
-}'
-```
-Expected Response (Status 401):
-```json
-{
-  "error": "Unauthorized access to MCP server"
-}
-```
-
-**6. Incorrect `X-Internal-API-Key` (Auth Failure)**
-
-This request provides an incorrect value for the `X-Internal-API-Key` header.
-
-```bash
-curl -X POST http://localhost:3001/mcp/stripe/getCustomerByEmail \
--H "Content-Type: application/json" \
--H "X-Internal-API-Key: wrongkey" \
--d '{
-  "args": { "email": "customer@example.com" },
-  "auth": { "token": "sk_test_mock_stripe_key" }
-}'
-```
-Expected Response (Status 401):
-```json
-{
-  "error": "Unauthorized access to MCP server"
-}
-```
+Refer to the `handlers/` directory for details on the mock logic and expected arguments for each action.
