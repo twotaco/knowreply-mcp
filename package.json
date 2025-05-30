@@ -1,0 +1,25 @@
+{
+  "name": "mcp_server",
+  "version": "1.0.0",
+  "description": "Mock Centralized Provider Server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "mcp",
+    "mock",
+    "server"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "zod": "^3.25.41"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
