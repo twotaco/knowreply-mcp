@@ -5,12 +5,83 @@ The Mock Centralized Provider (MCP) Server is a Node.js application built with E
 ## Features
 
 -   **Unified Interface**: Access different mock providers through a consistent API endpoint structure.
+-   **Service Discovery**: A `GET /discover` endpoint to dynamically fetch available providers, actions, argument schemas, and sample payloads.
 -   **Mock Implementations**: Includes mock handlers for common actions.
 -   **Request Validation**: Uses Zod to validate incoming request arguments and authentication details.
 -   **Secure API Key Management**:
     -   Supports fetching the server's internal API key from Google Cloud Secret Manager for GCP deployments.
     -   Uses a fallback environment variable for local development.
--   **Authentication**: Protects server access using an internal API key (dynamically configured) and expects third-party API keys (mocked) to be passed for individual provider calls.
+-   **Authentication**: Protects server access (except for `/health` and `/discover`) using an internal API key (dynamically configured) and expects third-party API keys (mocked) to be passed for individual provider calls.
+
+## Service Discovery (`/discover` Endpoint)
+
+The `/discover` endpoint allows clients (like `hub.knowreply.email` or other API consumers) to dynamically fetch a list of all available MCP providers and their actions, along with metadata for each.
+
+-   **Endpoint:** `GET /discover`
+-   **Authentication:** This endpoint does **not** require the `x-internal-api-key` header. It is public.
+-   **Response Structure Example:**
+    ```json
+    {
+      "providers": [
+        {
+          "provider_name": "stripe",
+          "display_name": "Stripe",
+          "description": "Actions related to Stripe.",
+          "actions": [
+            {
+              "action_name": "getCustomerByEmail",
+              "display_name": "Get Customer By Email",
+              "description": "Handles Get Customer By Email for Stripe.",
+              "args_schema": {
+                "email": "ZodString"
+              },
+              "sample_payload": {
+                "email": "user@example.com"
+              }
+            },
+            {
+              "action_name": "issueRefund",
+              "display_name": "Issue Refund",
+              "description": "Handles Issue Refund for Stripe.",
+              "args_schema": {
+                "chargeId": "ZodString",
+                "amount": "ZodOptional<ZodNumber>"
+              },
+              "sample_payload": {
+                "chargeId": "identifier_123",
+                "amount": 123
+              }
+            }
+            // ... more Stripe actions
+          ]
+        },
+        {
+          "provider_name": "hubspot",
+          "display_name": "Hubspot",
+          "description": "Actions related to Hubspot.",
+          "actions": [
+            {
+              "action_name": "getContactByEmail",
+              "display_name": "Get Contact By Email",
+              "description": "Handles Get Contact By Email for Hubspot.",
+              "args_schema": {
+                "email": "ZodString"
+              },
+              "sample_payload": {
+                "email": "user@example.com"
+              }
+            }
+            // ... more HubSpot actions
+          ]
+        }
+        // ... more providers
+      ]
+    }
+    ```
+-   **Important Note on Metadata:**
+    The `description`, `args_schema`, and `sample_payload` fields are dynamically generated. Descriptions are currently placeholders based on action and provider names. The `args_schema` provides a simplified view of argument names and their Zod types (e.g., "ZodString", "ZodOptional<ZodNumber>", "ZodObject"). If an action's handler does not export a Zod `ArgsSchema`, or if there's an error loading it, the `args_schema` may be empty and the description will indicate this. For richer, more detailed metadata, future enhancements may involve handlers exporting specific metadata objects.
+-   **Up-to-date Information:**
+    This endpoint always reflects the current state of available MCP handlers in the `handlers/` directory. If new MCPs are added or existing ones are modified (specifically their exported `ArgsSchema`), their information will be automatically updated here.
 
 ## Setup and Configuration
 
@@ -56,7 +127,7 @@ The server will attempt to configure its internal API key and then listen on the
 
 ## Calling MCP Endpoints
 
-MCP endpoints follow a structured path and require specific headers and a JSON body.
+To understand which MCPs are available and their required arguments, clients should first consult the `GET /discover` endpoint. The details below provide further examples and context.
 
 -   **Base URL Structure**: `http://localhost:<PORT>/mcp/:provider/:action`
     -   `:provider`: The name of the third-party service (e.g., `stripe`, `hubspot`, `shopify`, `klaviyo`, `zendesk`, `calendly`).
@@ -64,13 +135,13 @@ MCP endpoints follow a structured path and require specific headers and a JSON b
 
 -   **Headers**:
     -   `Content-Type: application/json`
-    -   `x-internal-api-key`: The MCP server's internal API key (configured via Secret Manager or `MCP_SERVER_INTERNAL_API_KEY_FALLBACK`).
+    -   `x-internal-api-key`: The MCP server's internal API key (configured via Secret Manager or `MCP_SERVER_INTERNAL_API_KEY_FALLBACK`). This is required for all `/mcp/*` routes.
 
 -   **JSON Body Structure**:
     ```json
     {
       "args": {
-        // Arguments specific to the :action
+        // Arguments specific to the :action, as discovered via /discover endpoint
       },
       "auth": {
         "token": "THIRD_PARTY_API_KEY_PLACEHOLDER" // The (mock) API key for the target :provider
@@ -80,7 +151,7 @@ MCP endpoints follow a structured path and require specific headers and a JSON b
 
 ## Available Mock MCP Handlers
 
-The server currently supports the following mock providers and actions:
+This list is dynamically generated and available via the `GET /discover` endpoint. The providers and actions currently include:
 
 **Stripe (`/mcp/stripe/*`)**
 *   `getCustomerByEmail`
@@ -112,33 +183,36 @@ The server currently supports the following mock providers and actions:
 *   `rescheduleMeeting`
 *   `getUpcomingMeetings`
 
-Refer to the `handlers/` directory for details on the mock logic and expected arguments for each action.
+Refer to the `handlers/` directory for the source code of these mock implementations. For detailed argument schemas and sample payloads, use the `GET /discover` endpoint.
 
 ---
 
-## Provider Specific MCP Documentation
+## Provider Specific MCP Documentation (Examples)
+
+The `GET /discover` endpoint is the authoritative source for available actions and their request structures. The examples below illustrate how to use some of the MCPs by showing example `curl` commands. The specific `args` and expected `auth.token` format can be inferred from the `/discover` output.
 
 ### Stripe MCPs
-(Details for Stripe MCPs like `getCustomerByEmail` would be here, similar to the new sections below. For brevity, existing Stripe/HubSpot examples in "Calling MCP Endpoints" section are not duplicated here but would ideally be structured similarly.)
+(Example: `stripe.getCustomerByEmail`)
+-   **Example `curl` (local):**
+    ```bash
+    curl -X POST http://localhost:3000/mcp/stripe/getCustomerByEmail \
+    -H "Content-Type: application/json" \
+    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
+    -d '{ "args": { "email": "customer@example.com" }, "auth": { "token": "sk_test_YOUR_STRIPE_KEY_HERE" } }'
+    ```
 
 ### HubSpot MCPs
-(Details for HubSpot MCPs like `getContactByEmail` would be here.)
+(Example: `hubspot.getContactByEmail`)
+-   **Example `curl` (local):**
+    ```bash
+    curl -X POST http://localhost:3000/mcp/hubspot/getContactByEmail \
+    -H "Content-Type: application/json" \
+    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
+    -d '{ "args": { "email": "contact@example.com" }, "auth": { "token": "YOUR_HUBSPOT_API_KEY_HERE" } }'
+    ```
 
 ### Shopify MCPs
-
-#### 1. `shopify.getOrderStatus`
--   **Purpose**: Retrieves the status of a specific order from Shopify.
--   **Args**: `{"orderId": "shopify_order_12345"}`
--   **Auth Token**: "Shopify Admin API Token"
--   **Example Success Data (`data` object)**:
-    ```json
-    {
-      "orderNumber": "#1001", "status": "fulfilled", "financialStatus": "paid",
-      "estimatedDelivery": "YYYY-MM-DDTHH:mm:ss.sssZ",
-      "items": [{ "title": "Awesome T-Shirt", "quantity": 1, "price": "25.00", "sku": "TSHIRT-AWESOME-M" }],
-      "createdAt": "YYYY-MM-DDTHH:mm:ss.sssZ"
-    }
-    ```
+(Example: `shopify.getOrderStatus`)
 -   **Example `curl` (local):**
     ```bash
     curl -X POST http://localhost:3000/mcp/shopify/getOrderStatus \
@@ -147,58 +221,8 @@ Refer to the `handlers/` directory for details on the mock logic and expected ar
     -d '{ "args": { "orderId": "shopify_order_12345" }, "auth": { "token": "YOUR_SHOPIFY_ADMIN_API_TOKEN" } }'
     ```
 
-#### 2. `shopify.cancelOrder`
--   **Purpose**: Attempts to cancel an order in Shopify.
--   **Args**: `{"orderId": "shopify_order_unfulfilled"}`
--   **Auth Token**: "Shopify Admin API Token"
--   **Example Success Data (`data` object)**:
-    ```json
-    { "orderId": "shopify_order_unfulfilled", "status": "cancelled", "cancelledAt": "YYYY-MM-DDTHH:mm:ss.sssZ" }
-    ```
--   **Example `curl` (local):**
-    ```bash
-    curl -X POST http://localhost:3000/mcp/shopify/cancelOrder \
-    -H "Content-Type: application/json" \
-    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "orderId": "shopify_order_unfulfilled" }, "auth": { "token": "YOUR_SHOPIFY_ADMIN_API_TOKEN" } }'
-    ```
-
-#### 3. `shopify.getCustomerOrders`
--   **Purpose**: Retrieves a list of orders for a customer based on their email.
--   **Args**: `{"email": "customer@example.com"}`
--   **Auth Token**: "Shopify Admin API Token"
--   **Example Success Data (`data` object)**:
-    ```json
-    {
-      "email": "customer@example.com",
-      "orders": [
-        { "orderId": "shopify_order_1001", "orderNumber": "#1001", "status": "fulfilled", "financialStatus": "paid", "totalPrice": "30.00", "createdAt": "YYYY-MM-DDTHH:mm:ss.sssZ" }
-      ]
-    }
-    ```
--   **Example `curl` (local):**
-    ```bash
-    curl -X POST http://localhost:3000/mcp/shopify/getCustomerOrders \
-    -H "Content-Type: application/json" \
-    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "email": "customer@example.com" }, "auth": { "token": "YOUR_SHOPIFY_ADMIN_API_TOKEN" } }'
-    ```
-
 ### Klaviyo MCPs
-
-#### 1. `klaviyo.getEmailHistory`
--   **Purpose**: Retrieves the email interaction history for a specific email address from Klaviyo.
--   **Args**: `{"email": "user@example.com"}`
--   **Auth Token**: "Klaviyo API Token"
--   **Example Success Data (`data` object)**:
-    ```json
-    {
-      "email": "user@example.com",
-      "history": [
-        { "campaignName": "Welcome Series - Email 1", "subject": "Welcome!", "sentAt": "YYYY-MM-DDTHH:mm:ss.sssZ", "status": "Sent" }
-      ]
-    }
-    ```
+(Example: `klaviyo.getEmailHistory`)
 -   **Example `curl` (local):**
     ```bash
     curl -X POST http://localhost:3000/mcp/klaviyo/getEmailHistory \
@@ -207,44 +231,8 @@ Refer to the `handlers/` directory for details on the mock logic and expected ar
     -d '{ "args": { "email": "user@example.com" }, "auth": { "token": "YOUR_KLAVIYO_API_TOKEN" } }'
     ```
 
-#### 2. `klaviyo.getCartStatus`
--   **Purpose**: Retrieves the current abandoned cart status for a user from Klaviyo.
--   **Args**: `{"email": "user@example.com"}`
--   **Auth Token**: "Klaviyo API Token"
--   **Example Success Data (`data` object for an active cart)**:
-    ```json
-    {
-      "email": "user@example.com",
-      "cart": {
-        "cartId": "klaviyo_cart_abc123", "items": [{ "productName": "Awesome T-Shirt", "quantity": 1, "lineTotal": "25.00" }],
-        "totalAmount": "55.00", "cartUrl": "https://example.com/cart/klaviyo_cart_abc123", "lastUpdatedAt": "YYYY-MM-DDTHH:mm:ss.sssZ"
-      }
-    }
-    ```
--   **Example `curl` (local):**
-    ```bash
-    curl -X POST http://localhost:3000/mcp/klaviyo/getCartStatus \
-    -H "Content-Type: application/json" \
-    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "email": "user@example.com" }, "auth": { "token": "YOUR_KLAVIYO_API_TOKEN" } }'
-    ```
-
 ### Zendesk MCPs
-
-#### 1. `zendesk.getTicketByEmail`
--   **Purpose**: Retrieves the most recent support ticket for a user based on their email.
--   **Args**: `{"email": "user@example.com"}`
--   **Auth Token**: "Zendesk API Token"
--   **Example Success Data (`data` object)**:
-    ```json
-    {
-      "email": "user@example.com",
-      "ticket": {
-        "ticketId": "zd_ticket_12345", "subject": "Issue with my recent order", "description": "I haven't received my package yet.",
-        "status": "open", "priority": "normal", "createdAt": "YYYY-MM-DDTHH:mm:ss.sssZ", "updatedAt": "YYYY-MM-DDTHH:mm:ss.sssZ"
-      }
-    }
-    ```
+(Example: `zendesk.getTicketByEmail`)
 -   **Example `curl` (local):**
     ```bash
     curl -X POST http://localhost:3000/mcp/zendesk/getTicketByEmail \
@@ -253,39 +241,8 @@ Refer to the `handlers/` directory for details on the mock logic and expected ar
     -d '{ "args": { "email": "user@example.com" }, "auth": { "token": "YOUR_ZENDESK_API_TOKEN" } }'
     ```
 
-#### 2. `zendesk.updateTicketStatus`
--   **Purpose**: Updates the status of a specific Zendesk ticket.
--   **Args**: `{"ticketId": "zd_ticket_12345", "newStatus": "pending"}`
-    -   `newStatus` must be one of: `new`, `open`, `pending`, `hold`, `solved`, `closed`.
--   **Auth Token**: "Zendesk API Token"
--   **Example Success Data (`data` object)**:
-    ```json
-    {
-      "ticketId": "zd_ticket_12345", "newStatus": "pending", "subject": "Issue with my recent order", "updatedAt": "YYYY-MM-DDTHH:mm:ss.sssZ"
-    }
-    ```
--   **Example `curl` (local):**
-    ```bash
-    curl -X POST http://localhost:3000/mcp/zendesk/updateTicketStatus \
-    -H "Content-Type: application/json" \
-    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "ticketId": "zd_ticket_12345", "newStatus": "pending" }, "auth": { "token": "YOUR_ZENDESK_API_TOKEN" } }'
-    ```
-
 ### Calendly MCPs
-
-#### 1. `calendly.rescheduleMeeting`
--   **Purpose**: Reschedules an existing Calendly meeting to a new time.
--   **Args**: `{"eventId": "event_uuid_123", "newTime": "YYYY-MM-DDTHH:mm:ss.sssZ"}` (newTime must be in the future)
--   **Auth Token**: "Calendly API Token"
--   **Example Success Data (`data` object)**:
-    ```json
-    {
-      "eventId": "event_uuid_123", "name": "Project Kickoff Meeting", "status": "active",
-      "newStartTime": "YYYY-MM-DDTHH:mm:ss.sssZ", "newEndTime": "YYYY-MM-DDTHH:mm:ss.sssZ",
-      "eventType": "https://api.calendly.com/event_types/ETYPE123"
-    }
-    ```
+(Example: `calendly.rescheduleMeeting`)
 -   **Example `curl` (local):**
     ```bash
     curl -X POST http://localhost:3000/mcp/calendly/rescheduleMeeting \
@@ -293,27 +250,7 @@ Refer to the `handlers/` directory for details on the mock logic and expected ar
     -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
     -d '{ "args": { "eventId": "event_uuid_123", "newTime": "2025-01-15T14:00:00.000Z" }, "auth": { "token": "YOUR_CALENDLY_API_TOKEN" } }'
     ```
-
-#### 2. `calendly.getUpcomingMeetings`
--   **Purpose**: Retrieves a list of upcoming meetings for an invitee based on their email.
--   **Args**: `{"email": "invitee@example.com"}`
--   **Auth Token**: "Calendly API Token"
--   **Example Success Data (`data` object)**:
-    ```json
-    {
-      "email": "invitee@example.com",
-      "upcomingMeetings": [
-        { "eventId": "event_uuid_123", "name": "Project Kickoff Meeting", "startTime": "YYYY-MM-DDTHH:mm:ss.sssZ", "endTime": "YYYY-MM-DDTHH:mm:ss.sssZ", "status": "active" }
-      ]
-    }
-    ```
--   **Example `curl` (local):**
-    ```bash
-    curl -X POST http://localhost:3000/mcp/calendly/getUpcomingMeetings \
-    -H "Content-Type: application/json" \
-    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "email": "invitee@example.com" }, "auth": { "token": "YOUR_CALENDLY_API_TOKEN" } }'
-    ```
+(For detailed `args` and expected `data` object structures for each action, please refer to the output of the `GET /discover` endpoint.)
 
 ---
 
