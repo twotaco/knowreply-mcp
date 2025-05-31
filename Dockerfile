@@ -5,7 +5,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install --omit=dev
 
-COPY . .NEW
+COPY . .
 
 EXPOSE 3000
 RUN chmod +x server.js

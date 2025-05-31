@@ -98,7 +98,8 @@ async function startServer() {
       }
 
       const handlerFileName = `${action}.js`;
-      const handlerPath = require('path').join(__dirname, 'handlers', provider, handlerFileName); // Corrected path usage
+      //const handlerPath = require('path').join(__dirname, 'handlers', provider, handlerFileName); // Corrected path usage
+      const handlerPath = require('path').resolve(__dirname, 'handlers', provider, handlerFileName);
 
       if (!fs.existsSync(handlerPath)) {
         console.error(`[${timestamp}] [MCP Error - 404] Provider: ${provider}, Action: ${action}, Error: MCP handler file not found at ${handlerPath}`);
