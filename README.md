@@ -1,21 +1,25 @@
 # Mock Centralized Provider (MCP) Server
 
-The Mock Centralized Provider (MCP) Server is a Node.js application built with Express that provides a unified interface to interact with mock versions of various third-party services like Stripe, HubSpot, Shopify, Klaviyo, Zendesk, and Calendly. It's designed for development and testing purposes, allowing you to simulate API calls without hitting actual external services.
+The Mock Centralized Provider (MCP) Server is a Node.js application that provides a unified interface to interact with various third-party services. Some handlers in this server connect to **live third-party APIs** (e.g., Stripe), while others use **mock implementations** (e.g., HubSpot, Shopify, Klaviyo, Zendesk, Calendly). It's designed for development, testing, and abstracting service interactions.
 
 ## Features
 
--   **Unified Interface**: Access different mock providers through a consistent API endpoint structure.
+-   **Unified Interface**: Access different providers through a consistent API endpoint structure.
+-   **Live & Mock Implementations**:
+    -   Connects to live Stripe APIs for real-time data interaction (for most Stripe MCPs).
+    -   Includes mock handlers for other services like HubSpot, Shopify, Klaviyo, Zendesk, and Calendly, and some specific Stripe MCPs (e.g. `createCheckoutSession`) for predictable testing environments.
 -   **Service Discovery**: A `GET /discover` endpoint to dynamically fetch available providers, actions, argument schemas, and sample payloads.
--   **Mock Implementations**: Includes mock handlers for common actions.
--   **Request Validation**: Uses Zod to validate incoming request arguments and authentication details.
+-   **Request Validation**: Uses Zod to validate incoming request arguments and authentication details for all handlers.
 -   **Secure API Key Management**:
     -   Supports fetching the server's internal API key from Google Cloud Secret Manager for GCP deployments.
     -   Uses a fallback environment variable for local development.
--   **Authentication**: Protects server access (except for `/health` and `/discover`) using an internal API key (dynamically configured) and expects third-party API keys (mocked) to be passed for individual provider calls.
+-   **Authentication**:
+    -   Protects MCP server access (except for `/health` and `/discover`) using an internal API key.
+    -   Expects third-party API keys to be passed in the `auth.token` field for individual provider calls (e.g., Stripe Secret Key for Stripe MCPs).
 
 ## Service Discovery (`/discover` Endpoint)
 
-The `/discover` endpoint allows clients (like `hub.knowreply.email` or other API consumers) to dynamically fetch a list of all available MCP providers and their actions, along with metadata for each.
+The `/discover` endpoint allows clients to dynamically fetch a list of all available MCP providers and their actions, along with metadata for each.
 
 -   **Endpoint:** `GET /discover`
 -   **Authentication:** This endpoint does **not** require the `x-internal-api-key` header. It is public.
@@ -26,7 +30,7 @@ The `/discover` endpoint allows clients (like `hub.knowreply.email` or other API
         {
           "provider_name": "stripe",
           "display_name": "Stripe",
-          "description": "Actions related to Stripe.",
+          "description": "Actions related to Stripe (Live API for most actions).",
           "actions": [
             {
               "action_name": "getCustomerByEmail",
@@ -38,40 +42,8 @@ The `/discover` endpoint allows clients (like `hub.knowreply.email` or other API
               "sample_payload": {
                 "email": "user@example.com"
               }
-            },
-            {
-              "action_name": "issueRefund",
-              "display_name": "Issue Refund",
-              "description": "Handles Issue Refund for Stripe.",
-              "args_schema": {
-                "chargeId": "ZodString",
-                "amount": "ZodOptional<ZodNumber>"
-              },
-              "sample_payload": {
-                "chargeId": "identifier_123",
-                "amount": 123
-              }
             }
             // ... more Stripe actions
-          ]
-        },
-        {
-          "provider_name": "hubspot",
-          "display_name": "Hubspot",
-          "description": "Actions related to Hubspot.",
-          "actions": [
-            {
-              "action_name": "getContactByEmail",
-              "display_name": "Get Contact By Email",
-              "description": "Handles Get Contact By Email for Hubspot.",
-              "args_schema": {
-                "email": "ZodString"
-              },
-              "sample_payload": {
-                "email": "user@example.com"
-              }
-            }
-            // ... more HubSpot actions
           ]
         }
         // ... more providers
@@ -79,9 +51,9 @@ The `/discover` endpoint allows clients (like `hub.knowreply.email` or other API
     }
     ```
 -   **Important Note on Metadata:**
-    The `description`, `args_schema`, and `sample_payload` fields are dynamically generated. Descriptions are currently placeholders based on action and provider names. The `args_schema` provides a simplified view of argument names and their Zod types (e.g., "ZodString", "ZodOptional<ZodNumber>", "ZodObject"). If an action's handler does not export a Zod `ArgsSchema`, or if there's an error loading it, the `args_schema` may be empty and the description will indicate this. For richer, more detailed metadata, future enhancements may involve handlers exporting specific metadata objects.
+    The `description`, `args_schema`, and `sample_payload` fields are dynamically generated. Descriptions are generally placeholders. The `args_schema` provides a simplified view of Zod types. For richer metadata, future enhancements may involve handlers exporting specific metadata objects.
 -   **Up-to-date Information:**
-    This endpoint always reflects the current state of available MCP handlers in the `handlers/` directory. If new MCPs are added or existing ones are modified (specifically their exported `ArgsSchema`), their information will be automatically updated here.
+    This endpoint always reflects the current state of available MCP handlers in the `handlers/` directory.
 
 ## Setup and Configuration
 
@@ -97,111 +69,137 @@ npm install
 ```
 
 ### 3. Environment Variables
-The server uses environment variables for configuration. Create a `.env` file by copying the example:
+Create a `.env` file from `.env.example` and configure it:
 ```bash
 cp .env.example .env
 ```
-Edit the `.env` file based on your environment (Local Development or GCP Deployment).
-
 **Key Environment Variables:**
+-   `PORT`: Optional. Server port (defaults to `3000`).
+-   `MCP_SERVER_INTERNAL_API_KEY_FALLBACK`: **Required for local use.** Secret key for this MCP server.
+-   `GCLOUD_PROJECT` & `MCP_API_KEY_SECRET_NAME`: For GCP deployment using Secret Manager.
 
--   `PORT`: Optional. The port the server will listen on. Defaults to `3000`.
-
--   **For Local Development:**
-    -   `MCP_SERVER_INTERNAL_API_KEY_FALLBACK`: **Required for local use.** This is your chosen secret key to protect access to this MCP server when not running on GCP or when GCP Secret Manager is not configured.
-
--   **For GCP Deployment (e.g., Cloud Run, GKE):**
-    -   `GCLOUD_PROJECT`: **Required.** Your Google Cloud Project ID where the secret is stored.
-    -   `MCP_API_KEY_SECRET_NAME`: **Required.** The name of the secret in Google Cloud Secret Manager that holds the MCP server's internal API key (e.g., `mcp-internal-api-key`).
-    -   The `MCP_SERVER_INTERNAL_API_KEY_FALLBACK` can be omitted or left blank if GCP settings are correctly configured.
-
-**Note on `MCP_SERVER_INTERNAL_API_KEY`**: This environment variable is now set *internally* by the application at startup. The server will attempt to fetch it from Google Cloud Secret Manager if `GCLOUD_PROJECT` and `MCP_API_KEY_SECRET_NAME` are defined. If these are not available, or if the fetch fails, it will use the value from `MCP_SERVER_INTERNAL_API_KEY_FALLBACK`. The `x-internal-api-key` header sent by clients must match this dynamically configured key.
+**Note on `MCP_SERVER_INTERNAL_API_KEY`**: This is set *internally* by the application at startup (from Secret Manager or fallback). The `x-internal-api-key` header from clients must match this.
 
 ## Running the Server
-
-To start the MCP server:
 ```bash
 npm start
 ```
-The server will attempt to configure its internal API key and then listen on the specified port. You should see log messages indicating the API key configuration status and the listening port.
 
 ## Calling MCP Endpoints
 
-To understand which MCPs are available and their required arguments, clients should first consult the `GET /discover` endpoint. The details below provide further examples and context.
-
--   **Base URL Structure**: `http://localhost:<PORT>/mcp/:provider/:action`
-    -   `:provider`: The name of the third-party service (e.g., `stripe`, `hubspot`, `shopify`, `klaviyo`, `zendesk`, `calendly`).
-    -   `:action`: The specific function to call on that provider.
-
+Consult `GET /discover` for available MCPs and arguments.
+-   **Base URL**: `http://localhost:<PORT>/mcp/:provider/:action`
 -   **Headers**:
     -   `Content-Type: application/json`
-    -   `x-internal-api-key`: The MCP server's internal API key (configured via Secret Manager or `MCP_SERVER_INTERNAL_API_KEY_FALLBACK`). This is required for all `/mcp/*` routes.
-
--   **JSON Body Structure**:
+    -   `x-internal-api-key`: Your `MCP_SERVER_INTERNAL_API_KEY_FALLBACK` (for local) or the configured server key. Required for `/mcp/*` routes.
+-   **JSON Body**:
     ```json
     {
-      "args": {
-        // Arguments specific to the :action, as discovered via /discover endpoint
-      },
-      "auth": {
-        "token": "THIRD_PARTY_API_KEY_PLACEHOLDER" // The (mock) API key for the target :provider
-      }
+      "args": { /* ... arguments for the action ... */ },
+      "auth": { "token": "THIRD_PARTY_API_KEY_PLACEHOLDER" }
     }
     ```
 
-## Available Mock MCP Handlers
+## Available MCP Handlers
 
-This list is dynamically generated and available via the `GET /discover` endpoint. The providers and actions currently include:
+This list is dynamically generated and available via `GET /discover`. Handlers for **Stripe (most actions) are live**, others are mock implementations.
 
-**Stripe (`/mcp/stripe/*`)**
-*   `getCustomerByEmail`
-*   `createCheckoutSession`
-*   `getLastInvoice`
-*   `getNextBillingDate`
-*   `issueRefund`
+**Stripe (`/mcp/stripe/*`)** (Mostly Live API)
+*   `getCustomerByEmail` (Live)
+*   `getLastInvoice` (Live)
+*   `getNextBillingDate` (Live)
+*   `issueRefund` (Live)
+*   `createCheckoutSession` (Mock)
 
-**HubSpot (`/mcp/hubspot/*`)**
+**HubSpot (`/mcp/hubspot/*`)** (Mock)
 *   `getContactByEmail`
 *   `updateContact`
 *   `getTicketStatus`
 *   `createTicket`
 
-**Shopify (`/mcp/shopify/*`)**
+**Shopify (`/mcp/shopify/*`)** (Mock)
 *   `getOrderStatus`
 *   `cancelOrder`
 *   `getCustomerOrders`
 
-**Klaviyo (`/mcp/klaviyo/*`)**
+**Klaviyo (`/mcp/klaviyo/*`)** (Mock)
 *   `getEmailHistory`
 *   `getCartStatus`
 
-**Zendesk (`/mcp/zendesk/*`)**
+**Zendesk (`/mcp/zendesk/*`)** (Mock)
 *   `getTicketByEmail`
 *   `updateTicketStatus`
 
-**Calendly (`/mcp/calendly/*`)**
+**Calendly (`/mcp/calendly/*`)** (Mock)
 *   `rescheduleMeeting`
 *   `getUpcomingMeetings`
 
-Refer to the `handlers/` directory for the source code of these mock implementations. For detailed argument schemas and sample payloads, use the `GET /discover` endpoint.
+For detailed argument schemas and sample payloads, use `GET /discover`. For source code, see `handlers/`.
 
 ---
 
 ## Provider Specific MCP Documentation (Examples)
 
-The `GET /discover` endpoint is the authoritative source for available actions and their request structures. The examples below illustrate how to use some of the MCPs by showing example `curl` commands. The specific `args` and expected `auth.token` format can be inferred from the `/discover` output.
+The `GET /discover` endpoint is the authoritative source for available actions and their request structures.
 
 ### Stripe MCPs
-(Example: `stripe.getCustomerByEmail`)
+**Note:** Most Stripe MCPs now make **live calls to the Stripe API**. You must provide a valid Stripe Secret Key (preferably a **Test Mode** key like `sk_test_...`) in the `auth.token` field of your requests. The `createCheckoutSession` MCP is currently still a mock.
+
+#### 1. `stripe.getCustomerByEmail` (Live)
+-   **Purpose**: Retrieves a customer's details from Stripe by their email address.
+-   **Args**: As per `/discover` (e.g., `{"email": "customer@example.com"}`)
+-   **Auth Token**: "Stripe Secret Key" (e.g., `sk_test_YOUR_STRIPE_TEST_KEY`)
+-   **Stripe API Docs**: [List Customers (filter by email)](https://stripe.com/docs/api/customers/list)
 -   **Example `curl` (local):**
     ```bash
     curl -X POST http://localhost:3000/mcp/stripe/getCustomerByEmail \
     -H "Content-Type: application/json" \
     -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "email": "customer@example.com" }, "auth": { "token": "sk_test_YOUR_STRIPE_KEY_HERE" } }'
+    -d '{ "args": { "email": "customer@example.com" }, "auth": { "token": "sk_test_YOUR_STRIPE_TEST_KEY" } }'
     ```
 
-### HubSpot MCPs
+#### 2. `stripe.getLastInvoice` (Live)
+-   **Purpose**: Retrieves the most recent invoice for a specific customer from Stripe.
+-   **Args**: As per `/discover` (e.g., `{"customerId": "cus_123abc"}`)
+-   **Auth Token**: "Stripe Secret Key"
+-   **Stripe API Docs**: [List Invoices](https://stripe.com/docs/api/invoices/list)
+-   **Example `curl` (local):**
+    ```bash
+    curl -X POST http://localhost:3000/mcp/stripe/getLastInvoice \
+    -H "Content-Type: application/json" \
+    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
+    -d '{ "args": { "customerId": "cus_123abc" }, "auth": { "token": "sk_test_YOUR_STRIPE_TEST_KEY" } }'
+    ```
+
+#### 3. `stripe.getNextBillingDate` (Live)
+-   **Purpose**: Retrieves the next billing date for a customer's active subscription from Stripe.
+-   **Args**: As per `/discover` (e.g., `{"customerId": "cus_123abc"}`)
+-   **Auth Token**: "Stripe Secret Key"
+-   **Stripe API Docs**: [List Subscriptions](https://stripe.com/docs/api/subscriptions/list)
+-   **Example `curl` (local):**
+    ```bash
+    curl -X POST http://localhost:3000/mcp/stripe/getNextBillingDate \
+    -H "Content-Type: application/json" \
+    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
+    -d '{ "args": { "customerId": "cus_123abc" }, "auth": { "token": "sk_test_YOUR_STRIPE_TEST_KEY" } }'
+    ```
+
+#### 4. `stripe.issueRefund` (Live)
+-   **Purpose**: Issues a refund for a specific charge in Stripe.
+-   **Args**: As per `/discover` (e.g., `{"chargeId": "ch_123abc", "amount": 500}`)
+-   **Auth Token**: "Stripe Secret Key"
+-   **Stripe API Docs**: [Create a Refund](https://stripe.com/docs/api/refunds/create)
+-   **Example `curl` (local):**
+    ```bash
+    curl -X POST http://localhost:3000/mcp/stripe/issueRefund \
+    -H "Content-Type: application/json" \
+    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
+    -d '{ "args": { "chargeId": "ch_123abc", "amount": 500 }, "auth": { "token": "sk_test_YOUR_STRIPE_TEST_KEY" } }'
+    ```
+
+*(Note: `stripe.createCheckoutSession` is still a mock implementation.)*
+
+### HubSpot MCPs (Mock)
 (Example: `hubspot.getContactByEmail`)
 -   **Example `curl` (local):**
     ```bash
@@ -211,7 +209,7 @@ The `GET /discover` endpoint is the authoritative source for available actions a
     -d '{ "args": { "email": "contact@example.com" }, "auth": { "token": "YOUR_HUBSPOT_API_KEY_HERE" } }'
     ```
 
-### Shopify MCPs
+### Shopify MCPs (Mock)
 (Example: `shopify.getOrderStatus`)
 -   **Example `curl` (local):**
     ```bash
@@ -221,7 +219,7 @@ The `GET /discover` endpoint is the authoritative source for available actions a
     -d '{ "args": { "orderId": "shopify_order_12345" }, "auth": { "token": "YOUR_SHOPIFY_ADMIN_API_TOKEN" } }'
     ```
 
-### Klaviyo MCPs
+### Klaviyo MCPs (Mock)
 (Example: `klaviyo.getEmailHistory`)
 -   **Example `curl` (local):**
     ```bash
@@ -231,7 +229,7 @@ The `GET /discover` endpoint is the authoritative source for available actions a
     -d '{ "args": { "email": "user@example.com" }, "auth": { "token": "YOUR_KLAVIYO_API_TOKEN" } }'
     ```
 
-### Zendesk MCPs
+### Zendesk MCPs (Mock)
 (Example: `zendesk.getTicketByEmail`)
 -   **Example `curl` (local):**
     ```bash
@@ -241,7 +239,7 @@ The `GET /discover` endpoint is the authoritative source for available actions a
     -d '{ "args": { "email": "user@example.com" }, "auth": { "token": "YOUR_ZENDESK_API_TOKEN" } }'
     ```
 
-### Calendly MCPs
+### Calendly MCPs (Mock)
 (Example: `calendly.rescheduleMeeting`)
 -   **Example `curl` (local):**
     ```bash
@@ -255,7 +253,7 @@ The `GET /discover` endpoint is the authoritative source for available actions a
 ---
 
 ## GCP Deployment Notes
-
+(This section remains largely the same)
 When deploying the MCP server to a Google Cloud environment (like Cloud Run, GKE, or Compute Engine):
 
 1.  **Secret Management:**

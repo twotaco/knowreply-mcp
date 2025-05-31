@@ -1,42 +1,22 @@
 const z = require('zod');
+const axios = require('axios'); // Import axios
+const qs = require('qs'); // Import qs for form data encoding
 
-// Zod Schemas for validation
+// Zod Schemas for validation (remain the same)
 const ArgsSchema = z.object({
   chargeId: z.string().min(1, { message: "Charge ID cannot be empty." }),
-  amount: z.number().positive({ message: "Amount must be a positive number." }).optional() // Amount is optional for full refunds
+  amount: z.number().positive({ message: "Amount must be a positive number." }).int({ message: "Amount must be an integer (cents)."}).optional() // Amount in cents, optional for full refund
 });
 
 const AuthSchema = z.object({
-  token: z.string().min(1, { message: "API token cannot be empty." })
+  token: z.string().min(1, { message: "Stripe API key (secret key) cannot be empty." })
 });
 
-// Internal function to simulate a call to the Stripe API
-async function _mockStripeApi_issueRefund({ chargeId, amount, apiKey }) {
-  console.log(`_mockStripeApi_issueRefund: Simulating Stripe API call for chargeId: ${chargeId}`);
-  console.log(`_mockStripeApi_issueRefund: Amount: ${amount || 'Full refund'}`);
-  console.log(`_mockStripeApi_issueRefund: Using (simulated) API Key: ${apiKey ? apiKey.substring(0, 5) + '...' : 'N/A'}`);
-
-  if (chargeId === "ch_mock_valid_charge") {
-    return { // Simulates a successful refund object from Stripe
-      id: "re_mock_abcdef12345",
-      amount: amount || 5000, // Mock original charge amount if not specified
-      charge: chargeId,
-      currency: "usd",
-      status: "succeeded",
-      reason: null,
-      created: Math.floor(Date.now() / 1000)
-    };
-  } else if (chargeId === "ch_mock_invalid_charge") {
-    return "mock_api_error_charge_not_refundable";
-  } else {
-    return "mock_api_error_unsupported_charge_id";
-  }
-}
+// The _mockStripeApi_issueRefund function is removed or commented out.
 
 async function handleIssueRefund({ args, auth }) {
-  console.log('Executing MCP: stripe.issueRefund');
+  console.log('Executing MCP: stripe.issueRefund (Live API)');
 
-  // Validate args
   const parsedArgs = ArgsSchema.safeParse(args);
   if (!parsedArgs.success) {
     console.warn('MCP: stripe.issueRefund - Invalid arguments:', parsedArgs.error.flatten().fieldErrors);
@@ -48,59 +28,88 @@ async function handleIssueRefund({ args, auth }) {
     };
   }
 
-  // Validate auth
   const parsedAuth = AuthSchema.safeParse(auth);
   if (!parsedAuth.success) {
     console.warn('MCP: stripe.issueRefund - Invalid auth:', parsedAuth.error.flatten().fieldErrors);
     return {
       success: false,
-      message: "Invalid auth information.",
+      message: "Invalid auth information (Stripe API key).",
       errors: parsedAuth.error.flatten().fieldErrors,
       data: null
     };
   }
 
-  // Use validated data
-  const { chargeId, amount } = parsedArgs.data; // amount can be undefined
-  const { token: apiKey } = parsedAuth.data;
-
-  console.log('Received auth token (simulated use for Stripe API key):', apiKey ? apiKey.substring(0,5) + '...' : 'No API key provided');
+  const { chargeId, amount } = parsedArgs.data; // amount is optional (integer in cents)
+  const { token: apiKey } = parsedAuth.data; // Stripe Secret Key
 
   try {
-    const refundData = await _mockStripeApi_issueRefund({ chargeId, amount, apiKey });
+    console.log(`Calling Stripe API to issue refund for charge: ${chargeId}${amount ? ` with amount: ${amount}` : ' (full refund)'}`);
 
-    if (refundData === "mock_api_error_charge_not_refundable") {
-      return {
-        success: false,
-        message: "This charge is not refundable (simulated).",
-        data: null,
+    const requestBody = {
+      charge: chargeId,
+    };
+    if (amount) {
+      requestBody.amount = amount;
+    }
+
+    // Stripe expects form-urlencoded data for POST requests
+    const encodedRequestBody = qs.stringify(requestBody);
+
+    const response = await axios.post('https://api.stripe.com/v1/refunds', encodedRequestBody, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    });
+
+    if (response.data && response.data.id) {
+      const refund = response.data;
+      // Transform Stripe refund object to our desired MCP data structure
+      const refundData = {
+        id: refund.id,
+        amount: refund.amount, // Amount refunded, in cents
+        charge: refund.charge,
+        currency: refund.currency,
+        status: refund.status, // e.g., 'succeeded', 'pending', 'failed', 'canceled'
+        reason: refund.reason,
+        created: refund.created ? new Date(refund.created * 1000).toISOString() : null, // Unix timestamp
+        // Add other fields as needed
       };
-    } else if (refundData === "mock_api_error_unsupported_charge_id") {
-      return {
-        success: false,
-        message: "Unable to process this charge ID with the current mock Stripe API setup.",
-        data: null,
-      };
-    } else if (refundData && refundData.status === 'succeeded') {
       return {
         success: true,
         data: refundData,
-        message: "Refund issued successfully."
+        message: `Refund ${refund.status}.` // More dynamic message
       };
     } else {
-      // Should not happen with current mock but good for robustness
+      // This case might not be typical for Stripe if an error doesn't throw an HTTP error code
       return {
         success: false,
-        message: "Refund attempt failed or returned an unexpected status.",
-        data: refundData
+        message: "Stripe API call for refund did not return expected data.",
+        data: null
       };
     }
   } catch (error) {
-    console.error("Error calling _mockStripeApi_issueRefund:", error);
+    console.error("Error calling Stripe API (issueRefund):", error.message);
+    let errorMessage = "An unexpected error occurred while trying to issue the refund via Stripe.";
+    let errorDetails = null;
+
+    if (error.response) {
+      console.error('Stripe API Error Status:', error.response.status);
+      console.error('Stripe API Error Data:', error.response.data);
+      errorMessage = `Stripe API Error: ${error.response.data?.error?.message || error.response.statusText || 'Failed to process refund'}`;
+      errorDetails = {
+        status: error.response.status,
+        data: error.response.data?.error
+      };
+    } else if (error.request) {
+      errorMessage = "No response received from Stripe API. Check network connectivity.";
+    }
+
     return {
       success: false,
-      message: "An unexpected error occurred while trying to issue the refund.",
+      message: errorMessage,
       data: null,
+      errors: errorDetails
     };
   }
 }

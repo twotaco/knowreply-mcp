@@ -1,50 +1,20 @@
 const z = require('zod');
+const axios = require('axios'); // Import axios
 
-// Zod Schemas for validation
+// Zod Schemas for validation (remain the same)
 const ArgsSchema = z.object({
   customerId: z.string().min(1, { message: "Customer ID cannot be empty." })
 });
 
 const AuthSchema = z.object({
-  token: z.string().min(1, { message: "API token cannot be empty." })
+  token: z.string().min(1, { message: "Stripe API key (secret key) cannot be empty." })
 });
 
-// Internal function to simulate a call to the Stripe API
-async function _mockStripeApi_getLastInvoice({ customerId, apiKey }) {
-  console.log(`_mockStripeApi_getLastInvoice: Simulating Stripe API call for customerId: ${customerId}`);
-  console.log(`_mockStripeApi_getLastInvoice: Using (simulated) API Key: ${apiKey ? apiKey.substring(0, 5) + '...' : 'N/A'}`);
-
-  if (customerId === "cus_mock_12345") {
-    return { // Simulates a found invoice object from Stripe
-      id: "in_mock_abcdef12345",
-      customer: customerId,
-      amount_due: 2000, // in cents
-      currency: "usd",
-      status: "open",
-      due_date: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60), // 7 days from now
-      lines: {
-        data: [
-          {
-            id: "li_mock_lineitem1",
-            description: "Subscription Product",
-            amount: 2000,
-            currency: "usd"
-          }
-        ]
-      },
-      // other stripe specific fields...
-    };
-  } else if (customerId === "cus_mock_noinvoice") {
-    return null; // Simulates Stripe API returning null or an empty list when no invoice found
-  } else {
-    return "mock_api_error_unsupported_customer_id";
-  }
-}
+// The _mockStripeApi_getLastInvoice function is removed or commented out.
 
 async function handleGetLastInvoice({ args, auth }) {
-  console.log('Executing MCP: stripe.getLastInvoice');
+  console.log('Executing MCP: stripe.getLastInvoice (Live API)');
 
-  // Validate args
   const parsedArgs = ArgsSchema.safeParse(args);
   if (!parsedArgs.success) {
     console.warn('MCP: stripe.getLastInvoice - Invalid arguments:', parsedArgs.error.flatten().fieldErrors);
@@ -56,52 +26,100 @@ async function handleGetLastInvoice({ args, auth }) {
     };
   }
 
-  // Validate auth
   const parsedAuth = AuthSchema.safeParse(auth);
   if (!parsedAuth.success) {
     console.warn('MCP: stripe.getLastInvoice - Invalid auth:', parsedAuth.error.flatten().fieldErrors);
     return {
       success: false,
-      message: "Invalid auth information.",
+      message: "Invalid auth information (Stripe API key).",
       errors: parsedAuth.error.flatten().fieldErrors,
       data: null
     };
   }
 
-  // Use validated data
   const { customerId } = parsedArgs.data;
-  const { token: apiKey } = parsedAuth.data;
-
-  console.log('Received auth token (simulated use for Stripe API key):', apiKey ? apiKey.substring(0,5) + '...' : 'No API key provided');
+  const { token: apiKey } = parsedAuth.data; // Stripe Secret Key
 
   try {
-    const invoiceData = await _mockStripeApi_getLastInvoice({ customerId, apiKey });
+    console.log(`Calling Stripe API to get last invoice for customer: ${customerId}`);
+    // Fetch invoices for the customer, order by creation date descending (Stripe default is descending by created)
+    // We can also filter by status if needed, e.g., ['open', 'paid']
+    // The design doc mentioned "most recent invoice with amount, status."
+    const response = await axios.get('https://api.stripe.com/v1/invoices', {
+      params: {
+        customer: customerId,
+        limit: 1, // Get only the most recent one
+        // status: 'paid' // Optional: filter by status, e.g., only 'paid' or 'open' invoices
+                         // Or fetch without status and return whatever is most recent.
+                         // For now, let's fetch the absolute most recent regardless of status
+                         // to match "most recent invoice" broadly.
+      },
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    });
 
-    if (invoiceData === "mock_api_error_unsupported_customer_id") {
-      return {
-        success: false,
-        message: "Unable to process this customer ID with the current mock Stripe API setup.",
-        data: null,
+    if (response.data && response.data.data && response.data.data.length > 0) {
+      const invoice = response.data.data[0];
+      // Transform Stripe invoice object to our desired MCP data structure
+      // This should align with the fields previously in the mock.
+      const invoiceData = {
+        id: invoice.id,
+        customer: invoice.customer,
+        amount_due: invoice.amount_due,
+        amount_paid: invoice.amount_paid,
+        amount_remaining: invoice.amount_remaining,
+        currency: invoice.currency,
+        status: invoice.status, // e.g., 'draft', 'open', 'paid', 'uncollectible', 'void'
+        due_date: invoice.due_date ? new Date(invoice.due_date * 1000).toISOString() : null, // Unix timestamp
+        created: invoice.created ? new Date(invoice.created * 1000).toISOString() : null, // Unix timestamp
+        invoice_pdf: invoice.invoice_pdf,
+        hosted_invoice_url: invoice.hosted_invoice_url,
+        lines: invoice.lines.data.map(line => ({ // Simplify line items
+            id: line.id,
+            description: line.description,
+            amount: line.amount,
+            currency: line.currency,
+            quantity: line.quantity,
+            period: line.period
+        }))
+        // Add other fields as needed
       };
-    } else if (invoiceData) {
       return {
         success: true,
         data: invoiceData,
         message: "Last invoice retrieved successfully."
       };
-    } else { // invoiceData is null
+    } else {
       return {
-        success: true,
+        success: true, // Successfully queried API, but no invoice found
         data: null,
-        message: "No invoice found for this customer."
+        message: "No invoices found for this customer."
       };
     }
   } catch (error) {
-    console.error("Error calling _mockStripeApi_getLastInvoice:", error);
+    console.error("Error calling Stripe API (getLastInvoice):", error.message);
+    let errorMessage = "An unexpected error occurred while trying to retrieve the last invoice from Stripe.";
+    let errorDetails = null;
+
+    if (error.response) {
+      console.error('Stripe API Error Status:', error.response.status);
+      console.error('Stripe API Error Data:', error.response.data);
+      errorMessage = `Stripe API Error: ${error.response.data?.error?.message || error.response.statusText || 'Failed to retrieve data'}`;
+      errorDetails = {
+        status: error.response.status,
+        data: error.response.data?.error
+      };
+    } else if (error.request) {
+      errorMessage = "No response received from Stripe API. Check network connectivity.";
+    }
+
     return {
       success: false,
-      message: "An unexpected error occurred while trying to retrieve the last invoice.",
+      message: errorMessage,
       data: null,
+      errors: errorDetails
     };
   }
 }
