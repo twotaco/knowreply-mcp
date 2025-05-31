@@ -8,5 +8,5 @@ RUN npm install --omit=dev
 COPY . .NEW
 
 EXPOSE 3000
-
+RUN chmod +x server.js
 CMD [ "npm", "start" ]
