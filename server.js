@@ -115,7 +115,7 @@ async function startServer() {
         }
 
         const result = await handler({ args, auth });
-        
+
         console.log(`[${new Date().toISOString()}] [MCP Response] Provider: ${provider}, Action: ${action}, Result: ${JSON.stringify(result)}`);
         res.status(200).json(result);
 

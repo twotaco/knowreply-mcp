@@ -53,7 +53,7 @@ async function _mockHubspotApi_updateContact({ contactId, updates, apiKey }) {
 
 async function handleUpdateContact({ args, auth }) {
   console.log('Executing MCP: hubspot.updateContact');
-  
+
   // Validate args
   const parsedArgs = ArgsSchema.safeParse(args);
   if (!parsedArgs.success) {

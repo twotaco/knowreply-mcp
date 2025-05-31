@@ -43,7 +43,7 @@ async function _mockStripeApi_getLastInvoice({ customerId, apiKey }) {
 
 async function handleGetLastInvoice({ args, auth }) {
   console.log('Executing MCP: stripe.getLastInvoice');
-  
+
   // Validate args
   const parsedArgs = ArgsSchema.safeParse(args);
   if (!parsedArgs.success) {

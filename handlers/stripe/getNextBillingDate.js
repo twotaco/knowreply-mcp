@@ -30,7 +30,7 @@ async function _mockStripeApi_getNextBillingDate({ customerId, apiKey }) {
     };
   } else if (customerId === "cus_mock_nosub") {
     // Simulate a customer with no active subscription
-    return null; 
+    return null;
   } else {
     return "mock_api_error_unsupported_customer_id";
   }
@@ -38,7 +38,7 @@ async function _mockStripeApi_getNextBillingDate({ customerId, apiKey }) {
 
 async function handleGetNextBillingDate({ args, auth }) {
   console.log('Executing MCP: stripe.getNextBillingDate');
-  
+
   // Validate args
   const parsedArgs = ArgsSchema.safeParse(args);
   if (!parsedArgs.success) {
