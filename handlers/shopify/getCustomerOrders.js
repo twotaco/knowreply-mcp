@@ -126,4 +126,8 @@ async function handleGetCustomerOrders({ args, auth }) {
   }
 }
 
-module.exports = handleGetCustomerOrders;
+module.exports = {
+  handler: handleGetCustomerOrders,
+  ArgsSchema: ArgsSchema,
+  AuthSchema: AuthSchema
+};

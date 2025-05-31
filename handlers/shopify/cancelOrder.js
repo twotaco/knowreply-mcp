@@ -152,4 +152,8 @@ async function handleCancelOrder({ args, auth }) {
   }
 }
 
-module.exports = handleCancelOrder;
+module.exports = {
+  handler: handleCancelOrder,
+  ArgsSchema: ArgsSchema,
+  AuthSchema: AuthSchema
+};

@@ -127,4 +127,8 @@ async function handleUpdateContact({ args, auth }) {
   }
 }
 
-module.exports = handleUpdateContact;
+module.exports = {
+  handler: handleUpdateContact,
+  ArgsSchema: ArgsSchema,
+  AuthSchema: AuthSchema
+};

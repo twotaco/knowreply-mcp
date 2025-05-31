@@ -139,4 +139,8 @@ async function handleGetOrderStatus({ args, auth }) {
   }
 }
 
-module.exports = handleGetOrderStatus;
+module.exports = {
+  handler: handleGetOrderStatus,
+  ArgsSchema: ArgsSchema,
+  AuthSchema: AuthSchema
+};

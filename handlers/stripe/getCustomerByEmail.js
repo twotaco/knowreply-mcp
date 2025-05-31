@@ -99,4 +99,8 @@ async function handleGetCustomerByEmail({ args, auth }) {
   }
 }
 
-module.exports = handleGetCustomerByEmail;
+module.exports = {
+  handler: handleGetCustomerByEmail,
+  ArgsSchema: ArgsSchema,
+  AuthSchema: AuthSchema
+};

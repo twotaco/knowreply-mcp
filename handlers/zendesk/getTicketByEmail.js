@@ -142,4 +142,8 @@ async function handleGetTicketByEmail({ args, auth }) {
   }
 }
 
-module.exports = handleGetTicketByEmail;
+module.exports = {
+  handler: handleGetTicketByEmail,
+  ArgsSchema: ArgsSchema,
+  AuthSchema: AuthSchema
+};

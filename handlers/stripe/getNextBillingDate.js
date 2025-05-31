@@ -108,4 +108,8 @@ async function handleGetNextBillingDate({ args, auth }) {
   }
 }
 
-module.exports = handleGetNextBillingDate;
+module.exports = {
+  handler: handleGetNextBillingDate,
+  ArgsSchema: ArgsSchema,
+  AuthSchema: AuthSchema
+};

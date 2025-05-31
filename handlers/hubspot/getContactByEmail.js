@@ -108,4 +108,8 @@ async function handleGetContactByEmail({ args, auth }) {
   }
 }
 
-module.exports = handleGetContactByEmail;
+module.exports = {
+  handler: handleGetContactByEmail,
+  ArgsSchema: ArgsSchema,
+  AuthSchema: AuthSchema
+};

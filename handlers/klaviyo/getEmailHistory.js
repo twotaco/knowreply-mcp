@@ -138,4 +138,8 @@ async function handleGetEmailHistory({ args, auth }) {
   }
 }
 
-module.exports = handleGetEmailHistory;
+module.exports = {
+  handler: handleGetEmailHistory,
+  ArgsSchema: ArgsSchema,
+  AuthSchema: AuthSchema
+};

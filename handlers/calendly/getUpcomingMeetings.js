@@ -149,4 +149,8 @@ async function handleGetUpcomingMeetings({ args, auth }) {
   }
 }
 
-module.exports = handleGetUpcomingMeetings;
+module.exports = {
+  handler: handleGetUpcomingMeetings,
+  ArgsSchema: ArgsSchema,
+  AuthSchema: AuthSchema
+};

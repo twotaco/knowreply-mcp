@@ -124,4 +124,8 @@ async function handleCreateTicket({ args, auth }) {
   }
 }
 
-module.exports = handleCreateTicket;
+module.exports = {
+  handler: handleCreateTicket,
+  ArgsSchema: ArgsSchema,
+  AuthSchema: AuthSchema
+};

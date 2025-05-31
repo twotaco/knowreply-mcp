@@ -162,4 +162,8 @@ async function handleRescheduleMeeting({ args, auth }) {
   }
 }
 
-module.exports = handleRescheduleMeeting;
+module.exports = {
+  handler: handleRescheduleMeeting,
+  ArgsSchema: ArgsSchema,
+  AuthSchema: AuthSchema
+};

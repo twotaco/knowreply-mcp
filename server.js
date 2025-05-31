@@ -179,11 +179,12 @@ async function startServer() {
 
       try {
         // Note: For /discover, we cleared cache. For regular execution, standard require behavior is fine.
-        const handler = require(handlerPath);
+        const handlerModule = require(handlerPath);
+        const handler = handlerModule.handler;
 
-        if (typeof handler !== 'function') {
-          console.error(`[${timestamp}] [MCP Error - 500] Provider: ${provider}, Action: ${action}, Error: Handler at ${handlerPath} is not a function`);
-          return res.status(500).json({ error: "Error executing MCP handler (handler is not a function)" });
+        if (!handlerModule || typeof handlerModule.handler !== 'function') { // Updated check
+          console.error(`[${timestamp}] [MCP Error - 500] Provider: ${provider}, Action: ${action}, Error: Handler function not found or not exported correctly at ${handlerPath}`);
+          return res.status(500).json({ error: "Error executing MCP handler (handler function not found or not exported correctly)" });
         }
 
         const result = await handler({ args, auth });

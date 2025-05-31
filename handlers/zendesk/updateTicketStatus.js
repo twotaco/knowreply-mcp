@@ -153,4 +153,8 @@ async function handleUpdateTicketStatus({ args, auth }) {
   }
 }
 
-module.exports = handleUpdateTicketStatus;
+module.exports = {
+  handler: handleUpdateTicketStatus,
+  ArgsSchema: ArgsSchema,
+  AuthSchema: AuthSchema
+};

@@ -135,4 +135,8 @@ async function handleGetCartStatus({ args, auth }) {
   }
 }
 
-module.exports = handleGetCartStatus;
+module.exports = {
+  handler: handleGetCartStatus,
+  ArgsSchema: ArgsSchema,
+  AuthSchema: AuthSchema
+};

@@ -105,4 +105,8 @@ async function handleIssueRefund({ args, auth }) {
   }
 }
 
-module.exports = handleIssueRefund;
+module.exports = {
+  handler: handleIssueRefund,
+  ArgsSchema: ArgsSchema,
+  AuthSchema: AuthSchema
+};

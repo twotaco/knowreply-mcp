@@ -106,4 +106,8 @@ async function handleGetLastInvoice({ args, auth }) {
   }
 }
 
-module.exports = handleGetLastInvoice;
+module.exports = {
+  handler: handleGetLastInvoice,
+  ArgsSchema: ArgsSchema,
+  AuthSchema: AuthSchema
+};

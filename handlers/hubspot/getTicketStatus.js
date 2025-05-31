@@ -130,4 +130,8 @@ async function handleGetTicketStatus({ args, auth }) {
   }
 }
 
-module.exports = handleGetTicketStatus;
+module.exports = {
+  handler: handleGetTicketStatus,
+  ArgsSchema: ArgsSchema,
+  AuthSchema: AuthSchema
+};
