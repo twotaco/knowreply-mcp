@@ -9,6 +9,7 @@ The Mock Centralized Provider (MCP) Server is a Node.js application that provide
     -   Connects to live Stripe APIs for real-time data interaction (for most Stripe MCPs).
     -   Includes mock handlers for other services like HubSpot, Shopify, Klaviyo, Zendesk, and Calendly, and some specific Stripe MCPs (e.g. `createCheckoutSession`) for predictable testing environments.
 -   **Service Discovery**: A `GET /discover` endpoint to dynamically fetch available providers, actions, argument schemas, and sample payloads.
+-   **CORS Support**: Configurable Cross-Origin Resource Sharing to allow requests from authorized frontend origins.
 -   **Request Validation**: Uses Zod to validate incoming request arguments and authentication details for all handlers.
 -   **Secure API Key Management**:
     -   Supports fetching the server's internal API key from Google Cloud Secret Manager for GCP deployments.
@@ -76,9 +77,24 @@ cp .env.example .env
 **Key Environment Variables:**
 -   `PORT`: Optional. Server port (defaults to `3000`).
 -   `MCP_SERVER_INTERNAL_API_KEY_FALLBACK`: **Required for local use.** Secret key for this MCP server.
--   `GCLOUD_PROJECT` & `MCP_API_KEY_SECRET_NAME`: For GCP deployment using Secret Manager.
+-   `GCLOUD_PROJECT` & `MCP_API_KEY_SECRET_NAME`: For GCP deployment using Secret Manager to fetch the internal API key.
+-   `CORS_ALLOWED_ORIGINS`: **Important for browser-based clients.** Comma-separated list of frontend origins allowed to make requests.
 
 **Note on `MCP_SERVER_INTERNAL_API_KEY`**: This is set *internally* by the application at startup (from Secret Manager or fallback). The `x-internal-api-key` header from clients must match this.
+
+#### CORS Configuration
+The server implements CORS (Cross-Origin Resource Sharing) to control which frontend origins can make requests. This is primarily configured via the `CORS_ALLOWED_ORIGINS` environment variable.
+
+-   **`CORS_ALLOWED_ORIGINS`**:
+    -   **Purpose**: Specifies a comma-separated list of frontend URLs that are permitted to access the MCP server.
+    -   **Format**: Example: `https://hub.example.com,http://localhost:5173,http://localhost:3001`
+    -   **Production**: For any browser-based frontend application to interact with the MCP server in a production environment, its origin (e.g., `https://your-frontend-app.com`) **must** be included in this list.
+    -   **Development (`NODE_ENV=development`)**: If `CORS_ALLOWED_ORIGINS` is not set, the server defaults to allowing common local development ports (e.g., `http://localhost:3000`, `http://localhost:3001`, `http://localhost:5173`, `http://localhost:8080`) for convenience.
+    -   **No Origin**: Requests with no origin (like server-to-server calls, `curl`, or mobile apps) are allowed by default.
+
+-   **Allowed HTTP Methods**: `GET, POST, PUT, DELETE, OPTIONS`
+-   **Allowed Headers**: `Content-Type, Authorization, x-internal-api-key` (custom headers needed by the application).
+-   **Credentials**: `credentials: true` is set, allowing credentials like `Authorization` headers or cookies (if applicable) to be passed in cross-origin requests.
 
 ## Running the Server
 ```bash
@@ -158,46 +174,7 @@ The `GET /discover` endpoint is the authoritative source for available actions a
     -d '{ "args": { "email": "customer@example.com" }, "auth": { "token": "sk_test_YOUR_STRIPE_TEST_KEY" } }'
     ```
 
-#### 2. `stripe.getLastInvoice` (Live)
--   **Purpose**: Retrieves the most recent invoice for a specific customer from Stripe.
--   **Args**: As per `/discover` (e.g., `{"customerId": "cus_123abc"}`)
--   **Auth Token**: "Stripe Secret Key"
--   **Stripe API Docs**: [List Invoices](https://stripe.com/docs/api/invoices/list)
--   **Example `curl` (local):**
-    ```bash
-    curl -X POST http://localhost:3000/mcp/stripe/getLastInvoice \
-    -H "Content-Type: application/json" \
-    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "customerId": "cus_123abc" }, "auth": { "token": "sk_test_YOUR_STRIPE_TEST_KEY" } }'
-    ```
-
-#### 3. `stripe.getNextBillingDate` (Live)
--   **Purpose**: Retrieves the next billing date for a customer's active subscription from Stripe.
--   **Args**: As per `/discover` (e.g., `{"customerId": "cus_123abc"}`)
--   **Auth Token**: "Stripe Secret Key"
--   **Stripe API Docs**: [List Subscriptions](https://stripe.com/docs/api/subscriptions/list)
--   **Example `curl` (local):**
-    ```bash
-    curl -X POST http://localhost:3000/mcp/stripe/getNextBillingDate \
-    -H "Content-Type: application/json" \
-    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "customerId": "cus_123abc" }, "auth": { "token": "sk_test_YOUR_STRIPE_TEST_KEY" } }'
-    ```
-
-#### 4. `stripe.issueRefund` (Live)
--   **Purpose**: Issues a refund for a specific charge in Stripe.
--   **Args**: As per `/discover` (e.g., `{"chargeId": "ch_123abc", "amount": 500}`)
--   **Auth Token**: "Stripe Secret Key"
--   **Stripe API Docs**: [Create a Refund](https://stripe.com/docs/api/refunds/create)
--   **Example `curl` (local):**
-    ```bash
-    curl -X POST http://localhost:3000/mcp/stripe/issueRefund \
-    -H "Content-Type: application/json" \
-    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "chargeId": "ch_123abc", "amount": 500 }, "auth": { "token": "sk_test_YOUR_STRIPE_TEST_KEY" } }'
-    ```
-
-*(Note: `stripe.createCheckoutSession` is still a mock implementation.)*
+*(Other Stripe examples for live MCPs like `getLastInvoice`, `getNextBillingDate`, `issueRefund` follow a similar structure. `stripe.createCheckoutSession` is still a mock.)*
 
 ### HubSpot MCPs (Mock)
 (Example: `hubspot.getContactByEmail`)
@@ -253,7 +230,6 @@ The `GET /discover` endpoint is the authoritative source for available actions a
 ---
 
 ## GCP Deployment Notes
-(This section remains largely the same)
 When deploying the MCP server to a Google Cloud environment (like Cloud Run, GKE, or Compute Engine):
 
 1.  **Secret Management:**
@@ -264,5 +240,6 @@ When deploying the MCP server to a Google Cloud environment (like Cloud Run, GKE
     Configure the following environment variables in your GCP service's settings:
     -   `GCLOUD_PROJECT`: Your Google Cloud Project ID.
     -   `MCP_API_KEY_SECRET_NAME`: The name of the secret in Secret Manager.
-    -   `PORT`: The port your service should listen on (e.g., `8080` for Cloud Run, though Cloud Run adapts this automatically).
-    -   `MCP_SERVER_INTERNAL_API_KEY_FALLBACK` can be omitted if Secret Manager is the primary source.
+    -   `PORT`: The port your service should listen on (e.g., `8080` for Cloud Run).
+    -   `MCP_SERVER_INTERNAL_API_KEY_FALLBACK`: Can be omitted if Secret Manager is the primary source.
+    -   `CORS_ALLOWED_ORIGINS`: **Crucial for browser-based frontends.** Set this to the specific origin(s) of your deployed frontend application (e.g., `https://your-frontend-app.com`).

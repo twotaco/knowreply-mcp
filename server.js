@@ -2,9 +2,10 @@ require('dotenv').config(); // Load .env file first
 
 const express = require('express');
 const fs = require('fs');
-const path = require('path'); // Added path require
+const path = require('path');
+const cors = require('cors'); // Require CORS
 const { SecretManagerServiceClient } = require('@google-cloud/secret-manager');
-const { toTitleCase, getZodSchemaDetails, generateSamplePayload } = require('./utils/discoveryHelpers'); // Added discovery helpers
+const { toTitleCase, getZodSchemaDetails, generateSamplePayload } = require('./utils/discoveryHelpers');
 
 // Create Express app
 const app = express();
@@ -18,7 +19,6 @@ app.use(express.json());
 const authenticateApiKey = (req, res, next) => {
   const apiKey = process.env.MCP_SERVER_INTERNAL_API_KEY;
   if (!apiKey) {
-    // This case should ideally not be reached if startServer ensures apiKey is set or exits.
     console.error('CRITICAL: MCP_SERVER_INTERNAL_API_KEY is not set. Server started incorrectly.');
     return res.status(500).json({ error: 'Internal Server Configuration Error: API Key missing' });
   }
@@ -32,7 +32,7 @@ const authenticateApiKey = (req, res, next) => {
 // --- Helper function to get API key ---
 async function getMcpApiKey() {
   const gcloudProject = process.env.GCLOUD_PROJECT;
-  const secretName = process.env.MCP_API_KEY_SECRET_NAME; // e.g., "mcp-api-key"
+  const secretName = process.env.MCP_API_KEY_SECRET_NAME;
   const fallbackApiKey = process.env.MCP_SERVER_INTERNAL_API_KEY_FALLBACK;
 
   if (gcloudProject && secretName) {
@@ -72,8 +72,45 @@ async function startServer() {
       console.error('CRITICAL: API Key could not be retrieved. Server cannot start.');
       process.exit(1);
     }
-    process.env.MCP_SERVER_INTERNAL_API_KEY = apiKey; // Set the key for the auth middleware
+    process.env.MCP_SERVER_INTERNAL_API_KEY = apiKey;
     console.log('MCP Server Internal API Key has been configured.');
+
+    // --- CORS Configuration ---
+    const allowedOriginsEnv = process.env.CORS_ALLOWED_ORIGINS;
+    const allowedOrigins = allowedOriginsEnv ? allowedOriginsEnv.split(',').map(origin => origin.trim()) : [];
+
+    if (allowedOrigins.length === 0 && process.env.NODE_ENV !== 'development') {
+        console.warn('CORS_ALLOWED_ORIGINS is not set. Cross-origin browser requests might be blocked in production.');
+    } else if (allowedOrigins.length === 0 && process.env.NODE_ENV === 'development') {
+        console.log('CORS_ALLOWED_ORIGINS not set. Defaulting to common local development origins for development mode.');
+        allowedOrigins.push('http://localhost:3000');
+        allowedOrigins.push('http://localhost:3001');
+        allowedOrigins.push('http://localhost:5173');
+        allowedOrigins.push('http://localhost:8080');
+    }
+
+    const corsOptions = {
+      origin: function (origin, callback) {
+        if (!origin) {
+          console.log('CORS: Allowing request with no origin.');
+          return callback(null, true);
+        }
+        if (allowedOrigins.includes(origin)) {
+          console.log(`CORS: Origin ${origin} allowed.`);
+          callback(null, true);
+        } else {
+          console.warn(`CORS: Origin ${origin} NOT allowed.`);
+          callback(new Error(`Origin ${origin} not allowed by CORS`));
+        }
+      },
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'x-internal-api-key'],
+      credentials: true,
+      optionsSuccessStatus: 204
+    };
+
+    app.use(cors(corsOptions));
+    // --- End CORS Configuration ---
 
     // Health check endpoint (not protected by API key authentication)
     app.get('/health', (req, res) => {
@@ -106,14 +143,13 @@ async function startServer() {
               let actionMeta = {
                 action_name: actionName,
                 display_name: toTitleCase(actionName),
-                description: `Handles ${toTitleCase(actionName)} for ${toTitleCase(providerName)}.`, // Placeholder
+                description: `Handles ${toTitleCase(actionName)} for ${toTitleCase(providerName)}.`,
                 args_schema: {},
                 sample_payload: {}
               };
 
               try {
                 const handlerPath = path.join(providerDirPath, fileName);
-                // Clear cache for the handler if it was required before
                 delete require.cache[require.resolve(handlerPath)];
                 const handlerModule = require(handlerPath);
 
@@ -178,11 +214,10 @@ async function startServer() {
       }
 
       try {
-        // Note: For /discover, we cleared cache. For regular execution, standard require behavior is fine.
         const handlerModule = require(handlerPath);
         const handler = handlerModule.handler;
 
-        if (!handlerModule || typeof handlerModule.handler !== 'function') { // Updated check
+        if (!handlerModule || typeof handlerModule.handler !== 'function') {
           console.error(`[${timestamp}] [MCP Error - 500] Provider: ${provider}, Action: ${action}, Error: Handler function not found or not exported correctly at ${handlerPath}`);
           return res.status(500).json({ error: "Error executing MCP handler (handler function not found or not exported correctly)" });
         }
@@ -217,7 +252,7 @@ startServer();
 // --- Global Error Handlers (Optional but good practice) ---
 process.on('uncaughtException', (err) => {
   console.error('UNCAUGHT EXCEPTION:', err);
-  process.exit(1); // Mandatory (as per the Node.js docs)
+  process.exit(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
