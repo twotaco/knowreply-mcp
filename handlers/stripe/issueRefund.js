@@ -27,7 +27,7 @@ async function _mockStripeApi_issueRefund({ chargeId, amount, apiKey }) {
       created: Math.floor(Date.now() / 1000)
     };
   } else if (chargeId === "ch_mock_invalid_charge") {
-    return "mock_api_error_charge_not_refundable"; 
+    return "mock_api_error_charge_not_refundable";
   } else {
     return "mock_api_error_unsupported_charge_id";
   }
@@ -35,7 +35,7 @@ async function _mockStripeApi_issueRefund({ chargeId, amount, apiKey }) {
 
 async function handleIssueRefund({ args, auth }) {
   console.log('Executing MCP: stripe.issueRefund');
-  
+
   // Validate args
   const parsedArgs = ArgsSchema.safeParse(args);
   if (!parsedArgs.success) {
@@ -92,7 +92,7 @@ async function handleIssueRefund({ args, auth }) {
       return {
         success: false,
         message: "Refund attempt failed or returned an unexpected status.",
-        data: refundData 
+        data: refundData
       };
     }
   } catch (error) {

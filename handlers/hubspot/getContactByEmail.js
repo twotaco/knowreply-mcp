@@ -37,7 +37,7 @@ async function _mockHubspotApi_getContactByEmail({ email, apiKey }) {
 
 async function handleGetContactByEmail({ args, auth }) {
   console.log('Executing MCP: hubspot.getContactByEmail');
-  
+
   // Validate args
   const parsedArgs = ArgsSchema.safeParse(args);
   if (!parsedArgs.success) {

@@ -48,7 +48,7 @@ async function _mockHubspotApi_getTicketStatus({ ticketId, apiKey }) {
 
 async function handleGetTicketStatus({ args, auth }) {
   console.log('Executing MCP: hubspot.getTicketStatus');
-  
+
   // Validate args
   const parsedArgs = ArgsSchema.safeParse(args);
   if (!parsedArgs.success) {

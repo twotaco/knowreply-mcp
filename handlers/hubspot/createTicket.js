@@ -41,16 +41,16 @@ async function _mockHubspotApi_createTicket({ subject, contactId, description, a
         }
     }
   };
-  
+
   // Optionally, store in a mock DB if needed for other operations, but not strictly for create
-  // mockTicketsDb[newTicketId] = newTicket; 
+  // mockTicketsDb[newTicketId] = newTicket;
 
   return newTicket; // Return the newly created ticket object
 }
 
 async function handleCreateTicket({ args, auth }) {
   console.log('Executing MCP: hubspot.createTicket');
-  
+
   // Validate args
   const parsedArgs = ArgsSchema.safeParse(args);
   if (!parsedArgs.success) {
