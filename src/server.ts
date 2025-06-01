@@ -1,13 +1,20 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { McpServer, McpServerOptions } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'; // McpServerOptions removed
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
-import { z, ZodError } from 'zod'; // ZodError might be useful for consistent error responses
+import { z, ZodError } from 'zod'; // Ensure ZodError is imported if you plan to use it for specific error handling
 import axios from 'axios';
-import { McpContent } from '@modelcontextprotocol/sdk/types'; // For return type
 
+// Define McpContent locally based on current usage
+interface McpTextContent {
+  type: "text";
+  text: string;
+  // TODO: Potentially add other McpContent fields if other types (e.g., 'uri', 'json') are used later
+  // For example: uri?: string; contentType?: string; embedding?: number[];
+}
+type McpContent = McpTextContent;
 
 // Load .env file first
 dotenv.config();
@@ -28,8 +35,9 @@ async function fetchAndSetInternalApiKey(): Promise<void> {
       const client = new SecretManagerServiceClient();
       const secretVersionName = `projects/${gcloudProject}/secrets/${secretName}/versions/latest`;
       console.log(`Attempting to fetch secret: ${secretVersionName}`);
-      const [version] = await client.accessSecretVersion({ name: secretVersionName });
-      const payload = version.payload?.data?.toString('utf8');
+      const request = { name: secretVersionName }; // Define request object separately
+      const [versionResponse] = await client.accessSecretVersion(request);
+      const payload = versionResponse.payload?.data?.toString('utf8');
       if (!payload) {
         throw new Error('Fetched secret payload is empty from Secret Manager.');
       }
@@ -50,7 +58,7 @@ async function fetchAndSetInternalApiKey(): Promise<void> {
     console.log('GCLOUD_PROJECT or MCP_API_KEY_SECRET_NAME not set. Using fallback API key for local development.');
     internalApiKey = fallbackApiKey;
   }
-  if (!internalApiKey) { // Should be unreachable if logic above is correct
+  if (!internalApiKey) {
     throw new Error('CRITICAL: Internal API Key could not be configured.');
   }
 }
@@ -62,8 +70,19 @@ const authenticateApiKey = (req: express.Request, res: express.Response, next: e
     return res.status(500).json({ error: 'Internal Server Configuration Error: API Key missing' });
   }
   const providedApiKey = req.headers['x-internal-api-key'];
+
+  let keyForLog = 'None';
+  if (providedApiKey) {
+    const key = Array.isArray(providedApiKey) ? providedApiKey[0] : providedApiKey;
+    if (typeof key === 'string' && key.length > 0) {
+      keyForLog = key.substring(0, 5) + '...';
+    } else if (typeof key === 'string' && key.length === 0) {
+      keyForLog = '[empty string]';
+    }
+  }
+
   if (!providedApiKey || providedApiKey !== internalApiKey) {
-    console.warn(`Failed authentication attempt. Provided key: ${providedApiKey ? providedApiKey.substring(0,5)+'...' : 'None'}`);
+    console.warn(`Failed authentication attempt. Provided key: ${keyForLog}`);
     return res.status(401).json({ error: 'Unauthorized access to MCP server' });
   }
   next();
@@ -84,7 +103,6 @@ const corsOptions: cors.CorsOptions = {
   origin: function (origin, callback) {
     console.log(`CORS Check: Request Origin: '${origin}', Allowed Origins Configured: '${allowedOrigins.join('|')}'`);
     if (!origin || allowedOrigins.includes(origin)) {
-      // Log when allowed, including undefined origin (server-to-server, curl)
       console.log(`CORS: Origin ${origin ? origin : 'undefined (server-to-server or curl)'} allowed.`);
       callback(null, true);
     } else {
@@ -93,30 +111,27 @@ const corsOptions: cors.CorsOptions = {
     }
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-internal-api-key'], // x-internal-api-key added here
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-internal-api-key'],
   credentials: true,
   optionsSuccessStatus: 204
 };
 
 // --- MCP Server Setup ---
-// This function creates and configures an McpServer instance.
-// Tools and resources will be added to this server instance.
 function initializeMcpServerInstance(): McpServer {
-  const mcpServerOptions: McpServerOptions = {
+  const mcpServerOptions: ConstructorParameters<typeof McpServer>[0] = { // Corrected typing
     name: "KnowReply-MCP-Server",
-    version: "1.0.0", // Consider moving to package.json version
-    // Add other server options if needed
+    version: "1.0.0",
   };
   const server = new McpServer(mcpServerOptions);
 
   // Refactored stripe.getCustomerByEmail tool
   server.tool(
-    "stripe_getCustomerByEmail", // Tool name
-    z.object({                   // Zod schema for arguments (paramSchema)
+    "stripe_getCustomerByEmail",
+    { // Raw Zod shape for paramSchema
       email: z.string().email({ message: "Invalid email format." }),
       stripe_api_key: z.string().min(1, { message: "Stripe API key (secret key) cannot be empty." })
-    }),
-    async (toolArgs): Promise<{ content: McpContent[], isError?: boolean }> => { // Tool handler function
+    },
+    async (toolArgs: { email: string, stripe_api_key: string }): Promise<{ content: McpContent[], isError?: boolean }> => {
       const { email, stripe_api_key: apiKey } = toolArgs;
       console.log(`Executing MCP SDK Tool: stripe_getCustomerByEmail for email: ${email}`);
 
@@ -131,16 +146,14 @@ function initializeMcpServerInstance(): McpServer {
 
         if (response.data && response.data.data && response.data.data.length > 0) {
           const customer = response.data.data[0];
-          const customerData = { // Transformed data
+          const customerData = {
             id: customer.id,
             name: customer.name || null,
             email: customer.email,
             created: customer.created ? new Date(customer.created * 1000).toISOString() : null,
           };
-          // Return data in MCP SDK content format
           return { content: [{ type: "text", text: JSON.stringify(customerData) }] };
         } else {
-          // Customer not found, but API call was successful
           return { content: [{ type: "text", text: JSON.stringify({ message: "Customer not found with the provided email.", customerData: null }) }] };
         }
       } catch (error: any) {
@@ -155,7 +168,6 @@ function initializeMcpServerInstance(): McpServer {
           errorMessage = "No response received from Stripe API. Check network connectivity.";
         }
 
-        // Return error in MCP SDK content format
         return {
           content: [{ type: "text", text: JSON.stringify({ error: errorMessage, details: errorDetails }) }],
           isError: true
@@ -170,66 +182,50 @@ function initializeMcpServerInstance(): McpServer {
 // --- Main Server Startup Logic ---
 async function startServer() {
   try {
-    await fetchAndSetInternalApiKey(); // Fetch and set the key at startup
+    await fetchAndSetInternalApiKey();
 
-    app.use(express.json()); // Middleware to parse JSON request bodies
-
-    // Apply CORS middleware globally
+    app.use(express.json());
     app.use(cors(corsOptions));
-    // Explicitly handle OPTIONS requests (preflight) for all routes
-    // This ensures CORS headers are sent for preflight requests even if a route doesn't explicitly handle OPTIONS.
-    app.options('*', cors(corsOptions));
+    app.options('*', cors(corsOptions)); // Handle preflight requests for all routes
 
-
-    // Health check endpoint (public, before other MCP-specific routes)
     app.get('/health', (req, res) => {
       res.status(200).json({
         status: 'ok',
         message: 'MCP Server is running',
-        apiKeyStatus: internalApiKey ? 'Loaded' : 'Not Loaded' // For diagnostics
+        apiKeyStatus: internalApiKey ? 'Loaded' : 'Not Loaded'
       });
     });
 
-    // MCP Endpoint - Protected by x-internal-api-key
-    // This single POST endpoint will handle all MCP JSON-RPC messages
     app.post('/mcp', authenticateApiKey, async (req: express.Request, res: express.Response) => {
-      // In stateless mode, create a new instance of transport and server for each request
-      // to ensure complete isolation, as per MCP SDK stateless streamable HTTP example.
-      const mcpInstance = initializeMcpServerInstance(); // Get a configured McpServer instance
+      const mcpInstance = initializeMcpServerInstance();
       const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: undefined, // Stateless, no session ID needed
+        sessionIdGenerator: undefined,
       });
 
-      // Clean up transport and server when the request is closed by the client
-      // This is important to prevent memory leaks or resource exhaustion.
       res.on('close', () => {
         console.log(`Request to /mcp closed by client. Closing MCP transport and server instance for this request.`);
-        transport.close(); // Close the transport
-        mcpInstance.close(); // Close the McpServer instance
+        transport.close();
+        mcpInstance.close();
       });
 
       try {
-        await mcpInstance.connect(transport); // Connect the server instance to the transport
-        await transport.handleRequest(req, res, req.body); // Handle the actual MCP request
+        await mcpInstance.connect(transport);
+        await transport.handleRequest(req, res, req.body);
       } catch (error: any) {
         console.error('Error handling MCP request in /mcp route:', error.message, error.stack);
         if (!res.headersSent) {
-          // Mimic JSON-RPC error structure if possible
           res.status(500).json({
             jsonrpc: '2.0',
             error: {
-              code: -32000, // Using a generic JSON-RPC internal error code
+              code: -32000,
               message: 'Internal server error while handling MCP request.',
-              data: error.message // Optional: include error message if not sensitive
+              data: error.message
             },
             id: req.body?.id || null,
           });
         }
       }
     });
-
-    // Remove old /discover endpoint - MCP SDK has its own discovery (listTools, listResources etc.)
-    // The old /mcp/:provider/:action routes are also replaced by the single /mcp POST endpoint.
 
     app.listen(port, () => {
       console.log(`MCP Server (SDK-based) listening at http://localhost:${port}`);
@@ -249,23 +245,17 @@ async function startServer() {
   }
 }
 
-// Start the server
 startServer();
 
-// Global Error Handlers (remain good practice)
 process.on('uncaughtException', (err) => {
   console.error('UNCAUGHT EXCEPTION:', err.message, err.stack);
   process.exit(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  // Ensure reason is an Error object for consistent logging
   if (reason instanceof Error) {
     console.error('UNHANDLED REJECTION:', reason.message, reason.stack);
   } else {
     console.error('UNHANDLED REJECTION (non-Error type):', reason);
   }
-  // Consider exiting if it's a critical unhandled promise rejection,
-  // depending on application's fault tolerance strategy.
-  // process.exit(1);
 });
