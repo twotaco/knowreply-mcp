@@ -197,7 +197,6 @@ async function startServer() {
 
     app.use(express.json());
     app.use(cors(corsOptions));
-    app.options('*', cors(corsOptions)); // Handle preflight requests for all routes
 
     app.get('/health', (req, res) => {
       res.status(200).json({
