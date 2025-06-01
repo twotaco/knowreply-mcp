@@ -8,53 +8,25 @@ The Mock Centralized Provider (MCP) Server is a Node.js application that provide
 -   **Live & Mock Implementations**:
     -   Connects to live Stripe APIs for real-time data interaction (for most Stripe MCPs).
     -   Includes mock handlers for other services like HubSpot, Shopify, Klaviyo, Zendesk, and Calendly, and some specific Stripe MCPs (e.g. `createCheckoutSession`) for predictable testing environments.
--   **Service Discovery**: A `GET /discover` endpoint to dynamically fetch available providers, actions, argument schemas, and sample payloads.
+-   **Service Discovery**: A `GET /discover` endpoint to dynamically fetch available providers, actions, argument schemas, and sample payloads (Note: with SDK, discovery is via SDK methods like `listTools`).
 -   **CORS Support**: Configurable Cross-Origin Resource Sharing to allow requests from authorized frontend origins.
--   **Request Validation**: Uses Zod to validate incoming request arguments and authentication details for all handlers.
+-   **Request Validation**: Uses Zod to validate incoming request arguments and authentication details for all handlers/tools.
 -   **Secure API Key Management**:
     -   Supports fetching the server's internal API key from Google Cloud Secret Manager for GCP deployments.
     -   Uses a fallback environment variable for local development.
 -   **Authentication**:
-    -   Protects MCP server access (except for `/health` and `/discover`) using an internal API key.
-    -   Expects third-party API keys to be passed in the `auth.token` field for individual provider calls (e.g., Stripe Secret Key for Stripe MCPs).
+    -   Protects MCP server access (except for `/health`) using an internal API key.
+    -   Expects third-party API keys to be passed in the `params` of each tool, as defined by the tool's schema.
+-   **TypeScript & Build Process**: Written in TypeScript for type safety, compiled to JavaScript for production. The Docker build process includes this compilation.
 
 ## Service Discovery (`/discover` Endpoint)
 
-The `/discover` endpoint allows clients to dynamically fetch a list of all available MCP providers and their actions, along with metadata for each.
+**Note:** With the transition to the `@modelcontextprotocol/sdk`, the primary method for service discovery will be through SDK-provided mechanisms (e.g., a tool similar to `listTools` that the SDK might offer, or a custom tool you build on top of the SDK that lists registered tools). The previous custom `GET /discover` endpoint described below is **no longer active** in the SDK-based server. This section will be updated or removed once the SDK's discovery mechanisms are fully integrated and documented for this server.
 
--   **Endpoint:** `GET /discover`
--   **Authentication:** This endpoint does **not** require the `x-internal-api-key` header. It is public.
--   **Response Structure Example:**
-    ```json
-    {
-      "providers": [
-        {
-          "provider_name": "stripe",
-          "display_name": "Stripe",
-          "description": "Actions related to Stripe (Live API for most actions).",
-          "actions": [
-            {
-              "action_name": "getCustomerByEmail",
-              "display_name": "Get Customer By Email",
-              "description": "Handles Get Customer By Email for Stripe.",
-              "args_schema": {
-                "email": "ZodString"
-              },
-              "sample_payload": {
-                "email": "user@example.com"
-              }
-            }
-            // ... more Stripe actions
-          ]
-        }
-        // ... more providers
-      ]
-    }
-    ```
--   **Important Note on Metadata:**
-    The `description`, `args_schema`, and `sample_payload` fields are dynamically generated. Descriptions are generally placeholders. The `args_schema` provides a simplified view of Zod types. For richer metadata, future enhancements may involve handlers exporting specific metadata objects.
--   **Up-to-date Information:**
-    This endpoint always reflects the current state of available MCP handlers in the `handlers/` directory.
+For conceptual understanding, the previous custom discovery aimed to provide:
+-   A list of providers and their actions.
+-   Argument schemas and sample payloads for each action.
+-   This functionality will be replaced or supplemented by SDK features.
 
 ## Setup and Configuration
 
@@ -93,139 +65,105 @@ The server implements CORS (Cross-Origin Resource Sharing) to control which fron
     -   **No Origin**: Requests with no origin (like server-to-server calls, `curl`, or mobile apps) are allowed by default.
 
 -   **Allowed HTTP Methods**: `GET, POST, PUT, DELETE, OPTIONS`
--   **Allowed Headers**: `Content-Type, Authorization, x-internal-api-key` (custom headers needed by the application).
+-   **Allowed Headers**: `Content-Type, Authorization, x-internal-api-key`.
 -   **Credentials**: `credentials: true` is set, allowing credentials like `Authorization` headers or cookies (if applicable) to be passed in cross-origin requests.
 
 ## Running the Server
-```bash
-npm start
-```
 
-## Calling MCP Endpoints
+### Local Development
+1.  **Build TypeScript (or watch for changes):**
+    ```bash
+    npm run build
+    ```
+    For continuous development, consider using a watch mode:
+    ```bash
+    # In one terminal:
+    npm run build -- -w
+    # In another terminal (requires nodemon: npm install -g nodemon):
+    # nodemon dist/server.js
+    ```
+    Or, set up the `dev` script in `package.json` with `concurrently` and `nodemon` as mentioned in previous setup steps for a streamlined experience.
 
-Consult `GET /discover` for available MCPs and arguments.
--   **Base URL**: `http://localhost:<PORT>/mcp/:provider/:action`
+2.  **Start the server:**
+    ```bash
+    npm start
+    ```
+    This runs the compiled JavaScript from `dist/server.js`.
+
+### Production
+The server is started using `npm start`, which executes `node dist/server.js`. Ensure the code has been compiled using `npm run build` first.
+
+## Calling MCP Endpoints (SDK Structure)
+
+With the `@modelcontextprotocol/sdk`, interactions are via a single POST endpoint (`/mcp`) using JSON-RPC 2.0.
+
+-   **Endpoint**: `POST http://localhost:<PORT>/mcp`
 -   **Headers**:
     -   `Content-Type: application/json`
-    -   `x-internal-api-key`: Your `MCP_SERVER_INTERNAL_API_KEY_FALLBACK` (for local) or the configured server key. Required for `/mcp/*` routes.
--   **JSON Body**:
+    -   `x-internal-api-key`: Your `MCP_SERVER_INTERNAL_API_KEY_FALLBACK` (for local) or the configured server key. Required for the `/mcp` route.
+-   **JSON Body (JSON-RPC 2.0 Request)**:
     ```json
     {
-      "args": { /* ... arguments for the action ... */ },
-      "auth": { "token": "THIRD_PARTY_API_KEY_PLACEHOLDER" }
+      "jsonrpc": "2.0",
+      "method": "<tool_name>", // e.g., "stripe_getCustomerByEmail"
+      "params": {
+        // Arguments specific to the tool, as defined in its Zod schema.
+        // This typically includes the third-party API key, e.g., "stripe_api_key".
+      },
+      "id": "your_request_id_123" // Unique request ID (string or number)
     }
     ```
+    The SDK server will route the request to the appropriate tool based on the `method` field. The third-party API key (previously in `auth.token`) is now expected within the `params` object for each tool, named according to the tool's argument schema (e.g., `stripe_api_key`, `hubspot_api_key`).
 
-## Available MCP Handlers
+## Available MCP Tools (SDK-based)
 
-This list is dynamically generated and available via `GET /discover`. Handlers for **Stripe (most actions) are live**, others are mock implementations.
+The specific list of available tools and their exact `paramSchema` can be discovered by calling an SDK method on the server instance (e.g., `listTools()`, if available and exposed via a custom endpoint) or by inspecting the tool registrations in `src/server.ts`.
 
-**Stripe (`/mcp/stripe/*`)** (Mostly Live API)
-*   `getCustomerByEmail` (Live)
-*   `getLastInvoice` (Live)
-*   `getNextBillingDate` (Live)
-*   `issueRefund` (Live)
-*   `createCheckoutSession` (Mock)
+**Currently Refactored SDK Tools:**
+*   `stripe_getCustomerByEmail` (Live API)
 
-**HubSpot (`/mcp/hubspot/*`)** (Mock)
-*   `getContactByEmail`
-*   `updateContact`
-*   `getTicketStatus`
-*   `createTicket`
+**To Be Refactored (examples of old handler names):**
+*   Stripe: `getLastInvoice`, `getNextBillingDate`, `issueRefund` (Live), `createCheckoutSession` (Mock)
+*   HubSpot: `getContactByEmail`, `updateContact`, `getTicketStatus`, `createTicket` (All Mock)
+*   Shopify: `getOrderStatus`, `cancelOrder`, `getCustomerOrders` (All Mock)
+*   Klaviyo: `getEmailHistory`, `getCartStatus` (All Mock)
+*   Zendesk: `getTicketByEmail`, `updateTicketStatus` (All Mock)
+*   Calendly: `rescheduleMeeting`, `getUpcomingMeetings` (All Mock)
 
-**Shopify (`/mcp/shopify/*`)** (Mock)
-*   `getOrderStatus`
-*   `cancelOrder`
-*   `getCustomerOrders`
-
-**Klaviyo (`/mcp/klaviyo/*`)** (Mock)
-*   `getEmailHistory`
-*   `getCartStatus`
-
-**Zendesk (`/mcp/zendesk/*`)** (Mock)
-*   `getTicketByEmail`
-*   `updateTicketStatus`
-
-**Calendly (`/mcp/calendly/*`)** (Mock)
-*   `rescheduleMeeting`
-*   `getUpcomingMeetings`
-
-For detailed argument schemas and sample payloads, use `GET /discover`. For source code, see `handlers/`.
+(These will be registered as tools like `stripe_getLastInvoice`, `hubspot_getContactByEmail`, etc.)
 
 ---
 
-## Provider Specific MCP Documentation (Examples)
+## Provider Specific Tool Examples (SDK Structure)
 
-The `GET /discover` endpoint is the authoritative source for available actions and their request structures.
+### Stripe Tools
+**Note:** Most Stripe tools (once refactored) make **live calls to the Stripe API**. You must provide a valid Stripe Secret Key (preferably a **Test Mode** key like `sk_test_...`) in the `params` of your JSON-RPC request, typically as `stripe_api_key`.
 
-### Stripe MCPs
-**Note:** Most Stripe MCPs now make **live calls to the Stripe API**. You must provide a valid Stripe Secret Key (preferably a **Test Mode** key like `sk_test_...`) in the `auth.token` field of your requests. The `createCheckoutSession` MCP is currently still a mock.
-
-#### 1. `stripe.getCustomerByEmail` (Live)
+#### `stripe_getCustomerByEmail` (Live SDK Tool)
 -   **Purpose**: Retrieves a customer's details from Stripe by their email address.
--   **Args**: As per `/discover` (e.g., `{"email": "customer@example.com"}`)
--   **Auth Token**: "Stripe Secret Key" (e.g., `sk_test_YOUR_STRIPE_TEST_KEY`)
+-   **JSON-RPC Method**: `stripe_getCustomerByEmail`
+-   **Params Schema (example from tool definition):**
+    ```typescript
+    z.object({
+      email: z.string().email(),
+      stripe_api_key: z.string().min(1)
+    })
+    ```
 -   **Stripe API Docs**: [List Customers (filter by email)](https://stripe.com/docs/api/customers/list)
 -   **Example `curl` (local):**
     ```bash
-    curl -X POST http://localhost:3000/mcp/stripe/getCustomerByEmail \
+    curl -X POST http://localhost:3000/mcp \
     -H "Content-Type: application/json" \
     -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "email": "customer@example.com" }, "auth": { "token": "sk_test_YOUR_STRIPE_TEST_KEY" } }'
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "stripe_getCustomerByEmail",
+      "params": { "email": "customer@example.com", "stripe_api_key": "sk_test_YOUR_STRIPE_TEST_KEY" },
+      "id": "req-1"
+    }'
     ```
 
-*(Other Stripe examples for live MCPs like `getLastInvoice`, `getNextBillingDate`, `issueRefund` follow a similar structure. `stripe.createCheckoutSession` is still a mock.)*
-
-### HubSpot MCPs (Mock)
-(Example: `hubspot.getContactByEmail`)
--   **Example `curl` (local):**
-    ```bash
-    curl -X POST http://localhost:3000/mcp/hubspot/getContactByEmail \
-    -H "Content-Type: application/json" \
-    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "email": "contact@example.com" }, "auth": { "token": "YOUR_HUBSPOT_API_KEY_HERE" } }'
-    ```
-
-### Shopify MCPs (Mock)
-(Example: `shopify.getOrderStatus`)
--   **Example `curl` (local):**
-    ```bash
-    curl -X POST http://localhost:3000/mcp/shopify/getOrderStatus \
-    -H "Content-Type: application/json" \
-    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "orderId": "shopify_order_12345" }, "auth": { "token": "YOUR_SHOPIFY_ADMIN_API_TOKEN" } }'
-    ```
-
-### Klaviyo MCPs (Mock)
-(Example: `klaviyo.getEmailHistory`)
--   **Example `curl` (local):**
-    ```bash
-    curl -X POST http://localhost:3000/mcp/klaviyo/getEmailHistory \
-    -H "Content-Type: application/json" \
-    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "email": "user@example.com" }, "auth": { "token": "YOUR_KLAVIYO_API_TOKEN" } }'
-    ```
-
-### Zendesk MCPs (Mock)
-(Example: `zendesk.getTicketByEmail`)
--   **Example `curl` (local):**
-    ```bash
-    curl -X POST http://localhost:3000/mcp/zendesk/getTicketByEmail \
-    -H "Content-Type: application/json" \
-    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "email": "user@example.com" }, "auth": { "token": "YOUR_ZENDESK_API_TOKEN" } }'
-    ```
-
-### Calendly MCPs (Mock)
-(Example: `calendly.rescheduleMeeting`)
--   **Example `curl` (local):**
-    ```bash
-    curl -X POST http://localhost:3000/mcp/calendly/rescheduleMeeting \
-    -H "Content-Type: application/json" \
-    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "eventId": "event_uuid_123", "newTime": "2025-01-15T14:00:00.000Z" }, "auth": { "token": "YOUR_CALENDLY_API_TOKEN" } }'
-    ```
-(For detailed `args` and expected `data` object structures for each action, please refer to the output of the `GET /discover` endpoint.)
+*(Other tools for Stripe, HubSpot, Shopify, etc., will follow a similar JSON-RPC structure once they are refactored and registered with the MCP Server instance in `src/server.ts`.)*
 
 ---
 
@@ -243,3 +181,7 @@ When deploying the MCP server to a Google Cloud environment (like Cloud Run, GKE
     -   `PORT`: The port your service should listen on (e.g., `8080` for Cloud Run).
     -   `MCP_SERVER_INTERNAL_API_KEY_FALLBACK`: Can be omitted if Secret Manager is the primary source.
     -   `CORS_ALLOWED_ORIGINS`: **Crucial for browser-based frontends.** Set this to the specific origin(s) of your deployed frontend application (e.g., `https://your-frontend-app.com`).
+
+3.  **Containerization & Build:**
+    -   The provided `Dockerfile` handles the TypeScript compilation (`npm run build`) during the image build process. This means the resulting Docker image contains the compiled JavaScript code from the `dist/` directory and is self-contained, ready to run.
+    -   Ensure your GCP service is configured to use the `npm start` command (which runs `node dist/server.js`). The `gcp-build` script in `package.json` (which also runs `npm run build`) can be used by Google Cloud Build if you are using it as your CI/CD for building Docker images.
