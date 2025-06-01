@@ -1,18 +1,17 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'; // McpServerOptions removed
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
-import { z, ZodError } from 'zod'; // Ensure ZodError is imported if you plan to use it for specific error handling
+import { z, ZodError } from 'zod';
 import axios from 'axios';
 
 // Define McpContent locally based on current usage
 interface McpTextContent {
   type: "text";
   text: string;
-  // TODO: Potentially add other McpContent fields if other types (e.g., 'uri', 'json') are used later
-  // For example: uri?: string; contentType?: string; embedding?: number[];
+  [key: string]: any; // Allow any other properties (FIX APPLIED HERE)
 }
 type McpContent = McpTextContent;
 
@@ -35,13 +34,26 @@ async function fetchAndSetInternalApiKey(): Promise<void> {
       const client = new SecretManagerServiceClient();
       const secretVersionName = `projects/${gcloudProject}/secrets/${secretName}/versions/latest`;
       console.log(`Attempting to fetch secret: ${secretVersionName}`);
-      const request = { name: secretVersionName }; // Define request object separately
+      const request = { name: secretVersionName };
       const [versionResponse] = await client.accessSecretVersion(request);
-      const payload = versionResponse.payload?.data?.toString('utf8');
-      if (!payload) {
-        throw new Error('Fetched secret payload is empty from Secret Manager.');
+
+      // Refined payload handling (FIX APPLIED HERE)
+      let apiKeyPayload: string | undefined;
+      if (versionResponse.payload?.data) {
+          if (typeof versionResponse.payload.data === 'string') {
+              apiKeyPayload = versionResponse.payload.data;
+          } else if (versionResponse.payload.data instanceof Uint8Array || Buffer.isBuffer(versionResponse.payload.data)) {
+              apiKeyPayload = Buffer.from(versionResponse.payload.data).toString('utf8');
+          } else {
+              console.error('Secret payload data is of an unexpected type:', typeof versionResponse.payload.data);
+              throw new Error('Secret payload data is of an unexpected type.');
+          }
       }
-      internalApiKey = payload;
+
+      if (!apiKeyPayload) {
+        throw new Error('Fetched secret payload is empty, data is missing, or data is of an unexpected type.');
+      }
+      internalApiKey = apiKeyPayload;
       console.log('Successfully fetched and configured API key from Secret Manager.');
     } catch (error: any) {
       console.error('Error fetching API key from Secret Manager:', error.message);
@@ -118,16 +130,15 @@ const corsOptions: cors.CorsOptions = {
 
 // --- MCP Server Setup ---
 function initializeMcpServerInstance(): McpServer {
-  const mcpServerOptions: ConstructorParameters<typeof McpServer>[0] = { // Corrected typing
+  const mcpServerOptions: ConstructorParameters<typeof McpServer>[0] = {
     name: "KnowReply-MCP-Server",
     version: "1.0.0",
   };
   const server = new McpServer(mcpServerOptions);
 
-  // Refactored stripe.getCustomerByEmail tool
   server.tool(
     "stripe_getCustomerByEmail",
-    { // Raw Zod shape for paramSchema
+    {
       email: z.string().email({ message: "Invalid email format." }),
       stripe_api_key: z.string().min(1, { message: "Stripe API key (secret key) cannot be empty." })
     },
@@ -174,7 +185,7 @@ function initializeMcpServerInstance(): McpServer {
         };
       }
     }
-  ); // End of server.tool for stripe_getCustomerByEmail
+  );
 
   return server;
 }
