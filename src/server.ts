@@ -144,57 +144,66 @@ function initializeMcpServerInstance(): McpServer {
   };
   const server = new McpServer(mcpServerOptions);
 
-  server.tool(
-    "stripe_getCustomerByEmail",
-    {
-      email: z.string().email({ message: "Invalid email format." }),
-      stripe_api_key: z.string().min(1, { message: "Stripe API key (secret key) cannot be empty." })
-    },
-    async (toolArgs: { email: string, stripe_api_key: string }): Promise<{ content: McpContent[], isError?: boolean }> => {
-      const { email, stripe_api_key: apiKey } = toolArgs;
-      console.log(`Executing MCP SDK Tool: stripe_getCustomerByEmail for email: ${email}`);
+  try {    
+    console.log('[MCP_SERVER_LOG] Tool "stripe.getCustomerByEmail" registration attempt start.');
 
-      try {
-        const response = await axios.get('https://api.stripe.com/v1/customers', {
-          params: { email: email, limit: 1 },
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/x-www-form-urlencoded'
+    server.tool(
+      "stripe.getCustomerByEmail",
+      {
+        email: z.string().email({ message: "Invalid email format." }),
+        stripe_api_key: z.string().min(1, { message: "Stripe API key (secret key) cannot be empty." })
+      },
+      async (toolArgs: { email: string, stripe_api_key: string }): Promise<{ content: McpContent[], isError?: boolean }> => {
+        const { email, stripe_api_key: apiKey } = toolArgs;
+        console.log(`Executing MCP SDK Tool: stripe.getCustomerByEmail for email: ${email}`);
+
+        try {
+          const response = await axios.get('https://api.stripe.com/v1/customers', {
+            params: { email: email, limit: 1 },
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/x-www-form-urlencoded'
+            }
+          });
+
+          if (response.data && response.data.data && response.data.data.length > 0) {
+            const customer = response.data.data[0];
+            const customerData = {
+              id: customer.id,
+              name: customer.name || null,
+              email: customer.email,
+              created: customer.created ? new Date(customer.created * 1000).toISOString() : null,
+            };
+            return { content: [{ type: "text", text: JSON.stringify(customerData) }] };
+          } else {
+            return { content: [{ type: "text", text: JSON.stringify({ message: "Customer not found with the provided email.", customerData: null }) }] };
           }
-        });
+        } catch (error: any) {
+          console.error("Error calling Stripe API (tool: stripe.getCustomerByEmail):", error.message);
+          let errorMessage = "An unexpected error occurred while trying to retrieve customer data from Stripe.";
+          let errorDetails: any = null;
 
-        if (response.data && response.data.data && response.data.data.length > 0) {
-          const customer = response.data.data[0];
-          const customerData = {
-            id: customer.id,
-            name: customer.name || null,
-            email: customer.email,
-            created: customer.created ? new Date(customer.created * 1000).toISOString() : null,
+          if (error.response) {
+            errorMessage = `Stripe API Error: ${error.response.data?.error?.message || error.response.statusText || 'Failed to retrieve data'}`;
+            errorDetails = { status: error.response.status, data: error.response.data?.error };
+          } else if (error.request) {
+            errorMessage = "No response received from Stripe API. Check network connectivity.";
+          }
+
+          return {
+            content: [{ type: "text", text: JSON.stringify({ error: errorMessage, details: errorDetails }) }],
+            isError: true
           };
-          return { content: [{ type: "text", text: JSON.stringify(customerData) }] };
-        } else {
-          return { content: [{ type: "text", text: JSON.stringify({ message: "Customer not found with the provided email.", customerData: null }) }] };
         }
-      } catch (error: any) {
-        console.error("Error calling Stripe API (tool: stripe_getCustomerByEmail):", error.message);
-        let errorMessage = "An unexpected error occurred while trying to retrieve customer data from Stripe.";
-        let errorDetails: any = null;
-
-        if (error.response) {
-          errorMessage = `Stripe API Error: ${error.response.data?.error?.message || error.response.statusText || 'Failed to retrieve data'}`;
-          errorDetails = { status: error.response.status, data: error.response.data?.error };
-        } else if (error.request) {
-          errorMessage = "No response received from Stripe API. Check network connectivity.";
-        }
-
-        return {
-          content: [{ type: "text", text: JSON.stringify({ error: errorMessage, details: errorDetails }) }],
-          isError: true
-        };
       }
-    }
-  );
-  console.log('[MCP_SERVER_LOG] Tool "stripe_getCustomerByEmail" registration attempted.');
+    );
+  }
+  catch (error: any) {
+    console.error('[MCP_SERVER_LOG] Error registering tool "stripe.getCustomerByEmail":', error.message);
+    throw new Error(`Failed to register tool "stripe.getCustomerByEmail": ${error.message}`);
+  }
+  // Log the tool registration attempt
+  console.log('[MCP_SERVER_LOG] Tool "stripe.getCustomerByEmail" registration attempted.');
 
   // globalMcpServer = server; // Removed assignment to global variable
   return server; // Return the new instance
@@ -224,64 +233,40 @@ async function startServer() {
       });
     });
 
-    app.post('/mcp', authenticateApiKey, async (req: express.Request, res: express.Response) => {
-      // ==========================================================================================
-      // UNRESOLVED ISSUE: "Method not found"
-      // ------------------------------------------------------------------------------------------
-      // Despite various architectural approaches, the MCP SDK consistently returns a
-      // "Method not found" error (JSON-RPC error code -32601) when attempting to call
-      // registered tools like "stripe_getCustomerByEmail".
-      //
-      // Current Architecture:
-      // - Per-request McpServer instances (created by `initializeMcpServerInstance`).
-      // - Per-request StreamableHTTPServerTransport instances.
-      // This aligns with the apparent stateless model suggested by the example name
-      // `simpleStatelessStreamableHttp.ts` that was referenced.
-      //
-      // Other Architectures Tried:
-      // 1. Global McpServer, Per-request Transport: Still "Method not found".
-      // 2. Global McpServer, Global Transport (connected once at startup): Still "Method not found".
-      //
-      // Hypothesis:
-      // The issue may stem from subtle internal workings of the @modelcontextprotocol/sdk,
-      // potentially around tool registration visibility, the `connect` method's effect on the
-      // McpServer instance, or how `StreamableHTTPServerTransport.handleRequest` dispatches
-      // method calls. Without SDK documentation or source access, further debugging is limited.
-      // The tool's own internal console.log is never reached, indicating a dispatch failure.
-      // ==========================================================================================
-      console.log(`[MCP_SERVER_LOG] Received request for method: ${req.body?.method} (ID: ${req.body?.id})`);
+      app.post(
+      '/mcp',
+      authenticateApiKey,
+      async (req: express.Request, res: express.Response) => {
+        console.log('[MCP_SERVER_LOG] Received JSON-RPC payload:', req.body);
 
-      const mcpInstance = initializeMcpServerInstance(); // Create per-request McpServer instance
-      const transport = new StreamableHTTPServerTransport({ // Create per-request transport
-        sessionIdGenerator: undefined,
-      });
+        const mcpInstance = initializeMcpServerInstance();
+        const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
 
-      res.on('close', () => {
-        console.log('Request to /mcp closed by client. Closing MCP transport and per-request server instance.');
-        transport.close(); // Close per-request transport
-        mcpInstance.close(); // Close per-request McpServer instance
-      });
+        res.on('close', () => {
+          console.log('[MCP_SERVER_LOG] Request closed; cleaning up.');
+          transport.close();
+          mcpInstance.close();
+        });
 
-      try {
-        console.log('[MCP_SERVER_LOG] Connecting per-request McpServer to per-request transport.');
-        await mcpInstance.connect(transport); // Connect per-request server to per-request transport
-        // console.log('[MCP_SERVER_LOG] Post-connect check: mcpInstance has tool "stripe_getCustomerByEmail"?', mcpInstance.hasTool?.('stripe_getCustomerByEmail') ?? 'cannot check'); // Removed failing diagnostic
-        await transport.handleRequest(req, res, req.body); // Use per-request transport
-      } catch (error: any) {
-        console.error('Error handling MCP request in /mcp route:', error.message, error.stack);
-        if (!res.headersSent) {
-          res.status(500).json({
-            jsonrpc: '2.0',
-            error: {
-              code: -32000,
-              message: 'Internal server error while handling MCP request.',
-              data: error.message
-            },
-            id: req.body?.id || null,
-          });
+        try {
+          await mcpInstance.connect(transport);
+          await transport.handleRequest(req, res, req.body);
+        } catch (error: any) {
+          console.error('[MCP_SERVER_LOG] Error in /mcp handler:', error);
+          if (!res.headersSent) {
+            res.status(500).json({
+              jsonrpc: '2.0',
+              error: {
+                code: -32000,
+                message: 'Internal server error.',
+                data: error.message
+              },
+              id: req.body?.id ?? null,
+            });
+          }
         }
       }
-    });
+    );
 
     app.listen(port, () => {
       console.log(`MCP Server (SDK-based) listening at http://localhost:${port}`);
