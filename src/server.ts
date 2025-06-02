@@ -18,6 +18,9 @@ type McpContent = McpTextContent;
 // Load .env file first
 dotenv.config();
 
+let globalMcpServer: McpServer;
+// let globalTransport: StreamableHTTPServerTransport; // Removed global transport
+
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -130,6 +133,10 @@ const corsOptions: cors.CorsOptions = {
 
 // --- MCP Server Setup ---
 function initializeMcpServerInstance(): McpServer {
+  if (globalMcpServer) {
+    return globalMcpServer;
+  }
+  console.log('[MCP_SERVER_LOG] Initializing McpServer instance and registering tools...');
   const mcpServerOptions: ConstructorParameters<typeof McpServer>[0] = {
     name: "KnowReply-MCP-Server",
     version: "1.0.0",
@@ -186,14 +193,24 @@ function initializeMcpServerInstance(): McpServer {
       }
     }
   );
+  console.log('[MCP_SERVER_LOG] Tool "stripe_getCustomerByEmail" registration attempted.');
 
-  return server;
+  globalMcpServer = server;
+  return globalMcpServer;
 }
 
 // --- Main Server Startup Logic ---
 async function startServer() {
   try {
     await fetchAndSetInternalApiKey();
+    globalMcpServer = initializeMcpServerInstance(); // Initialize global MCP server instance
+
+    // Global transport and its connection at startup are removed.
+    // globalTransport = new StreamableHTTPServerTransport({
+    //   sessionIdGenerator: undefined,
+    // });
+    // await globalMcpServer.connect(globalTransport);
+    // console.log('[MCP_SERVER_LOG] Global McpServer connected to global transport at startup.');
 
     app.use(express.json());
     app.use(cors(corsOptions));
@@ -207,20 +224,22 @@ async function startServer() {
     });
 
     app.post('/mcp', authenticateApiKey, async (req: express.Request, res: express.Response) => {
-      const mcpInstance = initializeMcpServerInstance();
+      console.log(`[MCP_SERVER_LOG] Received request for method: ${req.body?.method} (ID: ${req.body?.id})`);
+      // Create per-request transport
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
       });
 
       res.on('close', () => {
-        console.log(`Request to /mcp closed by client. Closing MCP transport and server instance for this request.`);
-        transport.close();
-        mcpInstance.close();
+        console.log(`Request to /mcp closed by client. Closing MCP transport for this request.`);
+        transport.close(); // Close per-request transport
+        // globalMcpServer.close(); // Global server should not be closed per request
       });
 
       try {
-        await mcpInstance.connect(transport);
-        await transport.handleRequest(req, res, req.body);
+        console.log('[MCP_SERVER_LOG] Connecting globalMcpServer to per-request transport.');
+        await globalMcpServer.connect(transport); // Connect global server to per-request transport
+        await transport.handleRequest(req, res, req.body); // Use per-request transport
       } catch (error: any) {
         console.error('Error handling MCP request in /mcp route:', error.message, error.stack);
         if (!res.headersSent) {
