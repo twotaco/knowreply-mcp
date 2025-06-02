@@ -1,309 +1,166 @@
-import express from 'express';
-import cors from 'cors';
-import dotenv from 'dotenv';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
-import { z, ZodError } from 'zod';
-import axios from 'axios';
-
-// Define McpContent locally based on current usage
-interface McpTextContent {
-  type: "text";
-  text: string;
-  [key: string]: any; // Allow any other properties (FIX APPLIED HERE)
-}
-type McpContent = McpTextContent;
-
-// Load .env file first
-dotenv.config();
-
-// let globalMcpServer: McpServer; // Removed global McpServer variable
-// let globalTransport: StreamableHTTPServerTransport; // Removed global transport
+// src/server.ts
+import express, { Request, Response } from "express";
+import cors from "cors";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { z } from "zod";
+import type { CallToolResult, GetPromptResult } from "@modelcontextprotocol/sdk/types.js";
 
 const app = express();
-const port = process.env.PORT || 3000;
+app.use(express.json());
+app.use(
+  cors({
+    origin: true,
+    methods: ["POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "x-internal-api-key"],
+    credentials: true,
+  })
+);
 
-// --- Centralized API Key Fetching Logic ---
-let internalApiKey: string | null = null;
+function buildServer(): McpServer {
+  console.log("[DEBUG] buildServer(): creating new McpServer…");
+  // We pass { capabilities: { logging: {} } } so that prompt() and tool() actually register
+  const server = new McpServer(
+    { name: "debug-mcp-server", version: "1.0.0" },
+    { capabilities: { logging: {} } }
+  );
 
-async function fetchAndSetInternalApiKey(): Promise<void> {
-  const gcloudProject = process.env.GCLOUD_PROJECT;
-  const secretName = process.env.MCP_API_KEY_SECRET_NAME;
-  const fallbackApiKey = process.env.MCP_SERVER_INTERNAL_API_KEY_FALLBACK;
+  // Log what was there before
+  console.log(
+    "[DEBUG]  _registeredPrompts before →",
+    Object.keys((server as any)._registeredPrompts || {})
+  );
+  console.log(
+    "[DEBUG]  _registeredTools  before →",
+    Object.keys((server as any)._registeredTools || {})
+  );
 
-  if (gcloudProject && secretName) {
-    try {
-      const client = new SecretManagerServiceClient();
-      const secretVersionName = `projects/${gcloudProject}/secrets/${secretName}/versions/latest`;
-      console.log(`Attempting to fetch secret: ${secretVersionName}`);
-      const request = { name: secretVersionName };
-      const [versionResponse] = await client.accessSecretVersion(request);
-
-      // Refined payload handling (FIX APPLIED HERE)
-      let apiKeyPayload: string | undefined;
-      if (versionResponse.payload?.data) {
-          if (typeof versionResponse.payload.data === 'string') {
-              apiKeyPayload = versionResponse.payload.data;
-          } else if (versionResponse.payload.data instanceof Uint8Array || Buffer.isBuffer(versionResponse.payload.data)) {
-              apiKeyPayload = Buffer.from(versionResponse.payload.data).toString('utf8');
-          } else {
-              console.error('Secret payload data is of an unexpected type:', typeof versionResponse.payload.data);
-              throw new Error('Secret payload data is of an unexpected type.');
-          }
-      }
-
-      if (!apiKeyPayload) {
-        throw new Error('Fetched secret payload is empty, data is missing, or data is of an unexpected type.');
-      }
-      internalApiKey = apiKeyPayload;
-      console.log('Successfully fetched and configured API key from Secret Manager.');
-    } catch (error: any) {
-      console.error('Error fetching API key from Secret Manager:', error.message);
-      if (!fallbackApiKey) {
-        throw new Error('Secret Manager fetch failed and MCP_SERVER_INTERNAL_API_KEY_FALLBACK is not set.');
-      }
-      console.warn('Falling back to MCP_SERVER_INTERNAL_API_KEY_FALLBACK due to Secret Manager error.');
-      internalApiKey = fallbackApiKey;
+  // 1) Register a prompt called “greeting-template”
+  server.prompt(
+    "greeting-template",
+    "A simple greeting prompt",
+    { name: z.string().describe("Name to include in greeting") },
+    async ({ name }): Promise<GetPromptResult> => {
+      console.log(`[DEBUG] running greeting-template → name="${name}"`);
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `Hello, ${name}! This is your friendly greeting.`,
+            },
+          },
+        ],
+      };
     }
-  } else {
-    if (!fallbackApiKey) {
-      throw new Error('MCP_SERVER_INTERNAL_API_KEY_FALLBACK is not set and GCP config for Secret Manager is missing.');
-    }
-    console.log('GCLOUD_PROJECT or MCP_API_KEY_SECRET_NAME not set. Using fallback API key for local development.');
-    internalApiKey = fallbackApiKey;
-  }
-  if (!internalApiKey) {
-    throw new Error('CRITICAL: Internal API Key could not be configured.');
-  }
-}
+  );
+  console.log("[DEBUG] Registered prompt → greeting-template");
 
-// --- Authentication Middleware (Service-to-Service) ---
-const authenticateApiKey = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  if (!internalApiKey) {
-    console.error('CRITICAL: Internal API Key is not configured on server. Denying request.');
-    return res.status(500).json({ error: 'Internal Server Configuration Error: API Key missing' });
-  }
-  const providedApiKey = req.headers['x-internal-api-key'];
-
-  let keyForLog = 'None';
-  if (providedApiKey) {
-    const key = Array.isArray(providedApiKey) ? providedApiKey[0] : providedApiKey;
-    if (typeof key === 'string' && key.length > 0) {
-      keyForLog = key.substring(0, 5) + '...';
-    } else if (typeof key === 'string' && key.length === 0) {
-      keyForLog = '[empty string]';
-    }
-  }
-
-  if (!providedApiKey || providedApiKey !== internalApiKey) {
-    console.warn(`Failed authentication attempt. Provided key: ${keyForLog}`);
-    return res.status(401).json({ error: 'Unauthorized access to MCP server' });
-  }
-  next();
-};
-
-// --- CORS Configuration ---
-const allowedOriginsEnv = process.env.CORS_ALLOWED_ORIGINS;
-const allowedOrigins = allowedOriginsEnv ? allowedOriginsEnv.split(',').map(origin => origin.trim()) : [];
-
-if (allowedOrigins.length === 0 && process.env.NODE_ENV !== 'development') {
-  console.warn('CORS_ALLOWED_ORIGINS is not set. Cross-origin browser requests might be blocked in production.');
-} else if (allowedOrigins.length === 0 && process.env.NODE_ENV === 'development') {
-  console.log('CORS_ALLOWED_ORIGINS not set. Defaulting to common local development origins for development mode.');
-  allowedOrigins.push('http://localhost:3000', 'http://localhost:3001', 'http://localhost:5173', 'http://localhost:8080');
-}
-
-const corsOptions: cors.CorsOptions = {
-  origin: function (origin, callback) {
-    console.log(`CORS Check: Request Origin: '${origin}', Allowed Origins Configured: '${allowedOrigins.join('|')}'`);
-    if (!origin || allowedOrigins.includes(origin)) {
-      console.log(`CORS: Origin ${origin ? origin : 'undefined (server-to-server or curl)'} allowed.`);
-      callback(null, true);
-    } else {
-      console.warn(`CORS: Origin ${origin} NOT allowed.`);
-      callback(new Error(`Origin ${origin} not allowed by CORS`));
-    }
-  },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-internal-api-key'],
-  credentials: true,
-  optionsSuccessStatus: 204
-};
-
-// --- MCP Server Setup ---
-// This function now ALWAYS creates a new McpServer instance
-function initializeMcpServerInstance(): McpServer {
-  // if (globalMcpServer) { // Removed check for global instance
-  //   return globalMcpServer;
-  // }
-  console.log('[MCP_SERVER_LOG] Initializing McpServer instance and registering tools...');
-  const mcpServerOptions: ConstructorParameters<typeof McpServer>[0] = {
-    name: "KnowReply-MCP-Server",
-    version: "1.0.0",
-  };
-  const server = new McpServer(mcpServerOptions);
-
-  try {    
-    console.log('[MCP_SERVER_LOG] Tool "stripe.getCustomerByEmail" registration attempt start.');
-
-    server.tool(
-      "stripe.getCustomerByEmail",
-      {
-        email: z.string().email({ message: "Invalid email format." }),
-        stripe_api_key: z.string().min(1, { message: "Stripe API key (secret key) cannot be empty." })
-      },
-      async (toolArgs: { email: string, stripe_api_key: string }): Promise<{ content: McpContent[], isError?: boolean }> => {
-        const { email, stripe_api_key: apiKey } = toolArgs;
-        console.log(`Executing MCP SDK Tool: stripe.getCustomerByEmail for email: ${email}`);
-
-        try {
-          const response = await axios.get('https://api.stripe.com/v1/customers', {
-            params: { email: email, limit: 1 },
-            headers: {
-              'Authorization': `Bearer ${apiKey}`,
-              'Content-Type': 'application/x-www-form-urlencoded'
-            }
-          });
-
-          if (response.data && response.data.data && response.data.data.length > 0) {
-            const customer = response.data.data[0];
-            const customerData = {
-              id: customer.id,
-              name: customer.name || null,
-              email: customer.email,
-              created: customer.created ? new Date(customer.created * 1000).toISOString() : null,
-            };
-            return { content: [{ type: "text", text: JSON.stringify(customerData) }] };
-          } else {
-            return { content: [{ type: "text", text: JSON.stringify({ message: "Customer not found with the provided email.", customerData: null }) }] };
-          }
-        } catch (error: any) {
-          console.error("Error calling Stripe API (tool: stripe.getCustomerByEmail):", error.message);
-          let errorMessage = "An unexpected error occurred while trying to retrieve customer data from Stripe.";
-          let errorDetails: any = null;
-
-          if (error.response) {
-            errorMessage = `Stripe API Error: ${error.response.data?.error?.message || error.response.statusText || 'Failed to retrieve data'}`;
-            errorDetails = { status: error.response.status, data: error.response.data?.error };
-          } else if (error.request) {
-            errorMessage = "No response received from Stripe API. Check network connectivity.";
-          }
-
-          return {
-            content: [{ type: "text", text: JSON.stringify({ error: errorMessage, details: errorDetails }) }],
-            isError: true
-          };
-        }
-      }
-    );
-  }
-  catch (error: any) {
-    console.error('[MCP_SERVER_LOG] Error registering tool "stripe.getCustomerByEmail":', error.message);
-    throw new Error(`Failed to register tool "stripe.getCustomerByEmail": ${error.message}`);
-  }
-  // Log the tool registration attempt
-  console.log('[MCP_SERVER_LOG] Tool "stripe.getCustomerByEmail" registration attempted.');
-
-  // globalMcpServer = server; // Removed assignment to global variable
-  return server; // Return the new instance
-}
-
-// --- Main Server Startup Logic ---
-async function startServer() {
-  try {
-    await fetchAndSetInternalApiKey();
-    // globalMcpServer = initializeMcpServerInstance(); // Global McpServer initialization removed
-
-    // Global transport and its connection at startup are removed.
-    // globalTransport = new StreamableHTTPServerTransport({
-    //   sessionIdGenerator: undefined,
-    // });
-    // await globalMcpServer.connect(globalTransport);
-    // console.log('[MCP_SERVER_LOG] Global McpServer connected to global transport at startup.');
-
-    app.use(express.json());
-    app.use(cors(corsOptions));
-
-    app.get('/health', (req, res) => {
-      res.status(200).json({
-        status: 'ok',
-        message: 'MCP Server is running',
-        apiKeyStatus: internalApiKey ? 'Loaded' : 'Not Loaded'
-      });
-    });
-
-      app.post(
-      '/mcp',
-      authenticateApiKey,
-      async (req: express.Request, res: express.Response) => {
-        console.log('[MCP_SERVER_LOG] Received JSON-RPC payload:', req.body);
-
-        const mcpInstance = initializeMcpServerInstance();
-        const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-
-        res.on('close', () => {
-          console.log('[MCP_SERVER_LOG] Request closed; cleaning up.');
-          transport.close();
-          mcpInstance.close();
+  // 2) Register a tool called “start-notification-stream” that will send back one SSE event
+  server.tool(
+    "start-notification-stream",
+    "Sends exactly one notification event then returns",
+    { interval: z.number().default(100), count: z.number().default(1) },
+    async ({ interval, count }, { sendNotification }): Promise<CallToolResult> => {
+      console.log(
+        `[DEBUG] start-notification-stream called with interval=${interval}, count=${count}`
+      );
+      let i = 0;
+      // Send exactly “count” notifications (here count=1 by default)
+      while (i < count) {
+        i++;
+        await sendNotification({
+          method: "notifications/message",
+          params: {
+            level: "info",
+            data: `Notification #${i} at ${new Date().toISOString()}`,
+          },
         });
-
-        try {
-          await mcpInstance.connect(transport);
-          await transport.handleRequest(req, res, req.body);
-        } catch (error: any) {
-          console.error('[MCP_SERVER_LOG] Error in /mcp handler:', error);
-          if (!res.headersSent) {
-            res.status(500).json({
-              jsonrpc: '2.0',
-              error: {
-                code: -32000,
-                message: 'Internal server error.',
-                data: error.message
-              },
-              id: req.body?.id ?? null,
-            });
-          }
-        }
+        console.log(`[DEBUG] sent notification #${i}`);
+        await new Promise((r) => setTimeout(r, interval));
       }
-    );
+      // Finally, return a small piece of content
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Finished sending ${count} notification(s).`,
+          },
+        ],
+      };
+    }
+  );
+  console.log("[DEBUG] Registered tool → start-notification-stream");
 
-    app.listen(port, () => {
-      console.log(`MCP Server (SDK-based) listening at http://localhost:${port}`);
-      console.log(`MCP requests should be POSTed to /mcp`);
-      if(process.env.NODE_ENV === 'development' && allowedOrigins.length > 0) {
-        console.log(`Development CORS enabled for: ${allowedOrigins.join(', ')}`);
-      } else if (allowedOrigins.length > 0) {
-        console.log(`Production CORS enabled for: ${allowedOrigins.join(', ')}`);
-      } else {
-        console.warn('CORS_ALLOWED_ORIGINS is not configured. Browser-based cross-origin requests will likely fail.');
-      }
-    });
+  // After registration, log what’s actually in the registry
+  console.log(
+    "[DEBUG]  _registeredPrompts after →",
+    Object.keys((server as any)._registeredPrompts || {})
+  );
+  console.log(
+    "[DEBUG]  _registeredTools  after →",
+    Object.keys((server as any)._registeredTools || {})
+  );
 
-  } catch (error: any) {
-    console.error('Failed to start server (outer catch):', error.message, error.stack);
-    console.error('OUTER CATCH: PROCESS IS EXITING DUE TO FAILURE IN startServer()');
-    process.exit(1);
-  }
+  return server;
 }
 
-startServer().then(() => {
-  console.log('startServer promise resolved. Server should be running.');
-}).catch(err => {
-  console.error('startServer promise rejected:', err.message, err.stack);
-  console.error('PROMISE REJECT: PROCESS IS EXITING DUE TO ASYNC FAILURE IN startServer() CHAIN');
-  process.exit(1);
-});
+app.post("/mcp", async (req: Request, res: Response) => {
+  console.log("[DEBUG] Received HTTP POST /mcp → body:", JSON.stringify(req.body));
 
-process.on('uncaughtException', (err) => {
-  console.error('UNCAUGHT EXCEPTION:', err.message, err.stack);
-  process.exit(1);
-});
+  // Step A: build a brand-new McpServer instance with one prompt + one tool
+  const mcpServer = buildServer();
 
-process.on('unhandledRejection', (reason, promise) => {
-  if (reason instanceof Error) {
-    console.error('UNHANDLED REJECTION:', reason.message, reason.stack);
-  } else {
-    console.error('UNHANDLED REJECTION (non-Error type):', reason);
+  // Step B: create the StreamableHTTPServerTransport
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+  });
+
+  // If the client disconnects mid-stream, log and clean up
+  res.on("close", () => {
+    console.log("[DEBUG] HTTP connection closed by client; cleaning up transport + server.");
+    transport.close();
+    mcpServer.close();
+  });
+
+  try {
+    // Connect the McpServer to the transport (this will “advertise” our prompt/tool to the transport)
+    await mcpServer.connect(transport);
+    console.log("[DEBUG] MCP server connected to transport; calling handleRequest()…");
+    // Finally, hand off the raw JSON-RPC body to the transport
+    await transport.handleRequest(req, res, req.body);
+  } catch (err: any) {
+    console.error("[DEBUG] ERROR in transport.handleRequest():", err);
+    if (!res.headersSent) {
+      res.status(500).json({
+        jsonrpc: "2.0",
+        error: { code: -32000, message: "Internal server error", data: err.message },
+        id: req.body?.id || null,
+      });
+    }
   }
+});
+
+// Just “405 Method Not Allowed” for GET/DELETE
+app.get("/mcp", (_req, res) => {
+  console.log("[DEBUG] Received HTTP GET /mcp");
+  res.status(405).json({
+    jsonrpc: "2.0",
+    error: { code: -32000, message: "Method not allowed" },
+    id: null,
+  });
+});
+app.delete("/mcp", (_req, res) => {
+  console.log("[DEBUG] Received HTTP DELETE /mcp");
+  res.status(405).json({
+    jsonrpc: "2.0",
+    error: { code: -32000, message: "Method not allowed" },
+    id: null,
+  });
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`[DEBUG] Server listening on port ${PORT}`);
 });
