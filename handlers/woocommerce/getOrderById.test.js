@@ -49,7 +49,7 @@ describe('WooCommerce getOrderById Handler', () => {
 
     await expect(handler({ args: validArgs })).rejects.toThrow(`Order ${mockOrderId} not found: Invalid ID.`);
   });
-
+  
   it('should handle other API errors from WooCommerce', async () => {
     const apiError = new Error('WooCommerce API Error');
     apiError.response = { status: 500, data: { message: 'Internal Server Error' } };
@@ -64,7 +64,7 @@ describe('WooCommerce getOrderById Handler', () => {
 
     await expect(handler({ args: validArgs })).rejects.toThrow('Network failed');
   });
-
+  
   it('should accept string orderId', async () => {
     const stringOrderId = "order_abc123";
     const argsWithStringOrderId = { ...validArgs, orderId: stringOrderId };
@@ -83,14 +83,14 @@ describe('WooCommerce getOrderById Handler', () => {
   const expectZodErrorContaining = async (args, expectedMessagePart) => {
     try {
       await handler({ args });
-      throw new Error('Handler did not throw expected ZodError');
+      throw new Error('Handler did not throw expected ZodError'); 
     } catch (error) {
       expect(error.name).toBe('ZodError');
       const foundError = error.errors.find(e => e.message.includes(expectedMessagePart));
       expect(foundError).toBeDefined();
     }
   };
-
+  
   // Helper to test Zod validation errors by checking for an exact message match
   const expectZodErrorExact = async (args, expectedMessage) => {
     try {
@@ -109,7 +109,7 @@ describe('WooCommerce getOrderById Handler', () => {
       const { baseUrl, ...incompleteArgs } = validArgs;
       await expectZodErrorExact(incompleteArgs, "Required");
     });
-
+    
     it('should throw validation error if baseUrl is invalid', async () => {
       const invalidArgs = { ...validArgs, baseUrl: 'not-a-url' };
       await expectZodErrorContaining(invalidArgs, "Invalid WooCommerce base URL");
@@ -119,7 +119,7 @@ describe('WooCommerce getOrderById Handler', () => {
       const { consumerKey, ...incompleteArgs } = validArgs;
       await expectZodErrorExact(incompleteArgs, "Required");
     });
-
+    
     it('should throw validation error if consumerKey is an empty string', async () => {
       const invalidArgs = { ...validArgs, consumerKey: "" };
       await expectZodErrorContaining(invalidArgs, "WooCommerce Consumer Key is required");
@@ -129,7 +129,7 @@ describe('WooCommerce getOrderById Handler', () => {
       const { consumerSecret, ...incompleteArgs } = validArgs;
       await expectZodErrorExact(incompleteArgs, "Required");
     });
-
+    
     it('should throw validation error if consumerSecret is an empty string', async () => {
       const invalidArgs = { ...validArgs, consumerSecret: "" };
       await expectZodErrorContaining(invalidArgs, "WooCommerce Consumer Secret is required");
@@ -139,14 +139,14 @@ describe('WooCommerce getOrderById Handler', () => {
       const { orderId, ...incompleteArgs } = validArgs;
       // For a missing field that is a union, Zod often defaults to "Invalid input" or a similar generic message
       // if "Required" isn't explicitly part of the union's error mapping for undefined.
-      await expectZodErrorContaining(incompleteArgs, "Invalid input");
+      await expectZodErrorContaining(incompleteArgs, "Invalid input"); 
     });
-
+    
     it('should throw validation error if orderId is not a positive integer (e.g. 0)', async () => {
       const invalidArgs = { ...validArgs, orderId: 0 };
        await expectZodErrorContaining(invalidArgs, "Order ID must be a positive integer");
     });
-
+    
     it('should throw validation error if orderId is an empty string', async () => {
       const invalidArgs = { ...validArgs, orderId: "" };
        await expectZodErrorContaining(invalidArgs, "Order ID cannot be empty if a string");

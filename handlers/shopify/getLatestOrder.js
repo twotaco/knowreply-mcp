@@ -66,8 +66,8 @@ async function getLatestOrderInternal(customerId) {
     }
   } catch (error) {
     console.error('Error fetching order data from Shopify:', error.response ? error.response.data : error.message);
-    const errorMessage = error.response && error.response.data && error.response.data.errors
-                       ? error.response.data.errors
+    const errorMessage = error.response && error.response.data && error.response.data.errors 
+                       ? error.response.data.errors 
                        : (error.message || 'Failed to fetch order data from Shopify.');
     throw new Error(errorMessage);
   }

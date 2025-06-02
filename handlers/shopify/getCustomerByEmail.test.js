@@ -102,12 +102,12 @@ describe('getCustomerByEmail Shopify Handler', () => {
     // The handler should use the .message of this error
     await expect(getCustomerByEmail({ args: { email: mockEmail } })).rejects.toThrow('Shopify API Error');
   });
-
+  
   it('should throw a validation error for an invalid email format', async () => {
     const invalidEmail = 'not-an-email';
     try {
       await getCustomerByEmail({ args: { email: invalidEmail } });
-      expect(true).toBe(false);
+      expect(true).toBe(false); 
     } catch (error) {
       expect(error.name).toBe('ZodError');
       expect(error.errors[0].message).toBe('Invalid email address');
@@ -117,7 +117,7 @@ describe('getCustomerByEmail Shopify Handler', () => {
   it('should throw a validation error if email is missing', async () => {
     try {
       await getCustomerByEmail({ args: {} });
-      expect(true).toBe(false);
+      expect(true).toBe(false); 
     } catch (error) {
       expect(error.name).toBe('ZodError');
       const emailError = error.errors.find(e => e.path.includes('email'));

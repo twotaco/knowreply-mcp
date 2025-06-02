@@ -16,7 +16,7 @@ async function getCustomersInternal({ baseUrl, consumerKey, consumerSecret, emai
   if (email) params.email = email;
   if (search) params.search = search;
   // By default, role=customer is often implied or can be set if needed
-  // params.role = 'customer';
+  // params.role = 'customer'; 
 
   const url = `${baseUrl.replace(/\/$/, '')}/wp-json/wc/v3/customers`;
   const authString = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');

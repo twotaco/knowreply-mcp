@@ -19,7 +19,7 @@ const ArgsSchema = z.object({
 async function createOrderNoteInternal({ baseUrl, consumerKey, consumerSecret, orderId, note }) {
   const url = `${baseUrl.replace(/\/$/, '')}/wp-json/wc/v3/orders/${orderId}/notes`;
   const authString = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
-
+  
   const payload = {
     note: note,
     // customer_note: false, // Defaulting to a private note
@@ -35,7 +35,7 @@ async function createOrderNoteInternal({ baseUrl, consumerKey, consumerSecret, o
     return response.data; // Returns the created order note object
   } catch (error) {
     console.error(`Error creating order note for order ${orderId} in WooCommerce: ${error.message}`, error.response?.data);
-
+    
     let errorMessage = `Failed to create note for order ${orderId}.`;
     if (error.response) {
       if (error.response.status === 404 && error.response.data?.message) {

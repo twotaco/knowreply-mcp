@@ -138,7 +138,7 @@ This list is dynamically generated and available via `GET /discover`. Handlers f
 *   `cancelOrder`
 *   `getCustomerOrders`
 *   `getCustomerByEmail`
-*   `getLatestOrder`
+*   `getLatestOrder` 
 
 **Klaviyo (`/mcp/klaviyo/*`)** (Mock)
 *   `getEmailHistory`

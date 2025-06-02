@@ -51,7 +51,7 @@ const ArgsSchema = z.object({
 async function createDraftOrderInternal({ baseUrl, consumerKey, consumerSecret, orderData }) {
   const url = `${baseUrl.replace(/\/$/, '')}/wp-json/wc/v3/orders`;
   const authString = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
-
+  
   // Ensure status is 'draft' if not explicitly set for this handler's purpose
   const payload = {
     ...orderData,
@@ -68,7 +68,7 @@ async function createDraftOrderInternal({ baseUrl, consumerKey, consumerSecret, 
     return response.data; // Returns the created order object
   } catch (error) {
     console.error(`Error creating draft order in WooCommerce: ${error.message}`, error.response?.data);
-
+    
     let errorMessage = 'Failed to create draft order.';
     if (error.response?.data?.message) {
         errorMessage = error.response.data.message;

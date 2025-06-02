@@ -26,7 +26,7 @@ async function getOrderByIdInternal({ baseUrl, consumerKey, consumerSecret, orde
     return response.data; // Returns a single order object
   } catch (error) {
     console.error(`Error fetching order ${orderId} from WooCommerce: ${error.message}`, error.response?.data);
-
+    
     let errorMessage = `Failed to fetch order ${orderId} from WooCommerce.`;
     if (error.response) {
       // WooCommerce often returns a 404 with a specific message if the order doesn't exist

@@ -15,7 +15,7 @@ const ArgsSchema = z.object({
   // If 'id' is meant to be order number, 'search' is the typical param.
   // If it means customer ID, then it's often 'customer:ID_HERE' in search or a specific 'customer' param.
   // For simplicity, we'll rely on 'search' for ID-like queries and 'customer' for customer ID.
-  customerId: z.union([z.number().int(), z.string()]).optional(),
+  customerId: z.union([z.number().int(), z.string()]).optional(), 
 });
 
 async function getOrdersInternal({ baseUrl, consumerKey, consumerSecret, email, status, search, customerId }) {
@@ -51,7 +51,7 @@ async function handler({ args, auth }) { // auth object is expected from server.
   // For now, assuming args will contain all necessary fields including auth details directly.
   // This is a common pattern if abstracting auth further up.
   // Let's adjust to assume auth details are passed within `args` as per Zod schema for now.
-
+  
   const validatedArgs = ArgsSchema.parse(args);
   return getOrdersInternal(validatedArgs);
 }

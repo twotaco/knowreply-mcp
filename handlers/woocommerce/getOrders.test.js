@@ -51,7 +51,7 @@ describe('WooCommerce getOrders Handler', () => {
       })
     );
   });
-
+  
   it('should fetch orders with customer ID filter', async () => {
     const argsWithCustomerId = { ...validArgs, customerId: 123 };
     axios.get.mockResolvedValue({ data: [{ id: 1, customer_id: 123 }] });
@@ -61,7 +61,7 @@ describe('WooCommerce getOrders Handler', () => {
     expect(axios.get).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
-        params: { customer: 123 },
+        params: { customer: 123 }, 
       })
     );
   });
@@ -88,7 +88,7 @@ describe('WooCommerce getOrders Handler', () => {
 
     await expect(handler({ args: validArgs })).rejects.toThrow('Invalid request');
   });
-
+  
   it('should handle generic network errors', async () => {
     const networkError = new Error('Network failed');
     axios.get.mockRejectedValue(networkError);
@@ -100,7 +100,7 @@ describe('WooCommerce getOrders Handler', () => {
     const expectZodError = async (args, expectedMessagePart) => {
       try {
         await handler({ args });
-        throw new Error('Handler did not throw expected ZodError');
+        throw new Error('Handler did not throw expected ZodError'); 
       } catch (error) {
         expect(error.name).toBe('ZodError');
         const foundError = error.errors.find(e => e.message.includes(expectedMessagePart));
@@ -112,7 +112,7 @@ describe('WooCommerce getOrders Handler', () => {
       const { baseUrl, ...incompleteArgs } = validArgs;
       await expectZodError(incompleteArgs, "Required");
     });
-
+    
     it('should throw validation error if baseUrl is invalid', async () => {
       const invalidArgs = { ...validArgs, baseUrl: 'not-a-url' };
       await expectZodError(invalidArgs, "Invalid WooCommerce base URL");
@@ -129,7 +129,7 @@ describe('WooCommerce getOrders Handler', () => {
       // Custom message is for .min(1), for missing field it should be "Required"
       await expectZodError(incompleteArgs, "Required");
     });
-
+    
     it('should throw validation error if email is invalid', async () => {
       const invalidArgs = { ...validArgs, email: 'not-an-email' };
       await expectZodError(invalidArgs, "Invalid email");

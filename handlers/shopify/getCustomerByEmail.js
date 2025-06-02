@@ -48,14 +48,14 @@ async function getCustomerByEmailInternal(email) {
         numberOfOrders: customer.orders_count,
       };
     } else {
-      return null;
+      return null; 
     }
   } catch (error) {
     // Log the actual error structure for better debugging if it's not an Axios error with a response
     // console.error('Raw error in getCustomerByEmailInternal:', error);
     console.error('Error fetching customer data from Shopify:', error.response ? error.response.data : error.message);
-    const errorMessage = error.response && error.response.data && error.response.data.errors
-                       ? error.response.data.errors
+    const errorMessage = error.response && error.response.data && error.response.data.errors 
+                       ? error.response.data.errors 
                        : (error.message || 'Failed to fetch customer data from Shopify.'); // Use error.message if response is not available
     throw new Error(errorMessage);
   }

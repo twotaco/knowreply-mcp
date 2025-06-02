@@ -67,7 +67,7 @@ describe('WooCommerce getCustomers Handler', () => {
       })
     );
   });
-
+  
   it('should fetch customers with both email and search filters', async () => {
     const customerEmail = 'test@example.com';
     const searchTerm = 'Testy';
@@ -99,7 +99,7 @@ describe('WooCommerce getCustomers Handler', () => {
 
     await expect(handler({ args: argsForApiErrorTest })).rejects.toThrow('Invalid parameter(s): some_parameter');
   });
-
+  
   it('should handle generic network errors', async () => {
     const networkError = new Error('Network connection failed');
     axios.get.mockRejectedValue(networkError);
@@ -117,7 +117,7 @@ describe('WooCommerce getCustomers Handler', () => {
         expect(error.errors.some(e => e.message.includes(expectedMessagePart))).toBe(true);
       }
     };
-
+    
     ['baseUrl', 'consumerKey', 'consumerSecret'].forEach(field => {
       it(`should throw validation error if ${field} is missing`, async () => {
         const incompleteArgs = { ...validArgs };
@@ -125,12 +125,12 @@ describe('WooCommerce getCustomers Handler', () => {
         await expectZodError(incompleteArgs, "Required");
       });
     });
-
+    
     it('should throw validation error if baseUrl is invalid', async () => {
       const invalidArgs = { ...validArgs, baseUrl: 'not-a-valid-url' };
       await expectZodError(invalidArgs, "Invalid WooCommerce base URL");
     });
-
+    
     ['consumerKey', 'consumerSecret'].forEach(field => {
          it(`should throw validation error if ${field} is an empty string`, async () => {
             const invalidArgs = { ...validArgs, [field]: "" };
@@ -143,13 +143,13 @@ describe('WooCommerce getCustomers Handler', () => {
       const invalidArgs = { ...validArgs, email: 'not-an-email' };
       await expectZodError(invalidArgs, "Invalid email format");
     });
-
+    
     it('should accept valid email', async () => {
       const argsWithValidEmail = { ...validArgs, email: 'valid@example.com' };
-      axios.get.mockResolvedValue({ data: [] });
+      axios.get.mockResolvedValue({ data: [] }); 
       await expect(handler({ args: argsWithValidEmail })).resolves.not.toThrow();
     });
-
+    
     it('should accept empty search string and not pass it as a param', async () => {
       const argsWithEmptySearch = { ...validArgs, search: '' };
       axios.get.mockResolvedValue({ data: [] });
