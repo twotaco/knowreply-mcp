@@ -137,6 +137,8 @@ This list is dynamically generated and available via `GET /discover`. Handlers f
 *   `getOrderStatus`
 *   `cancelOrder`
 *   `getCustomerOrders`
+*   `getCustomerByEmail`
+*   `getLatestOrder`
 
 **Klaviyo (`/mcp/klaviyo/*`)** (Mock)
 *   `getEmailHistory`
@@ -194,6 +196,30 @@ The `GET /discover` endpoint is the authoritative source for available actions a
     -H "Content-Type: application/json" \
     -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
     -d '{ "args": { "orderId": "shopify_order_12345" }, "auth": { "token": "YOUR_SHOPIFY_ADMIN_API_TOKEN" } }'
+    ```
+
+#### Shopify `getCustomerByEmail` (Mock)
+-   **Purpose**: Retrieves customer information from Shopify based on their email address. Designed to interact with `GET /admin/api/2025-04/customers/search.json`.
+-   **Args**: As per `/discover` (e.g., `{"email": "customer@example.com"}`)
+-   **Auth Token**: "YOUR_SHOPIFY_ADMIN_API_ACCESS_TOKEN" (Note: For actual Shopify API, this would be an Admin API access token. The `SHOPIFY_API_KEY` and `SHOPIFY_API_PASSWORD` from your `.env` are used by the handler internally for Basic Auth).
+-   **Example `curl` (local):**
+    ```bash
+    curl -X POST http://localhost:3000/mcp/shopify/getCustomerByEmail \
+    -H "Content-Type: application/json" \
+    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
+    -d '{ "args": { "email": "customer@example.com" }, "auth": { "token": "unused_for_this_mock_but_auth_obj_is_required" } }'
+    ```
+
+#### Shopify `getLatestOrder` (Mock)
+-   **Purpose**: Retrieves the latest order for a given Shopify customer ID. Designed to interact with `GET /admin/api/2025-04/orders.json`.
+-   **Args**: As per `/discover` (e.g., `{"customerId": "1234567890"}`)
+-   **Auth Token**: "YOUR_SHOPIFY_ADMIN_API_ACCESS_TOKEN" (As above, used internally by handler).
+-   **Example `curl` (local):**
+    ```bash
+    curl -X POST http://localhost:3000/mcp/shopify/getLatestOrder \
+    -H "Content-Type: application/json" \
+    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
+    -d '{ "args": { "customerId": 1234567890 }, "auth": { "token": "unused_for_this_mock_but_auth_obj_is_required" } }'
     ```
 
 ### Klaviyo MCPs (Mock)
