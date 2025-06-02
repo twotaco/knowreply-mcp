@@ -18,7 +18,7 @@ type McpContent = McpTextContent;
 // Load .env file first
 dotenv.config();
 
-let globalMcpServer: McpServer;
+// let globalMcpServer: McpServer; // Removed global McpServer variable
 // let globalTransport: StreamableHTTPServerTransport; // Removed global transport
 
 const app = express();
@@ -132,10 +132,11 @@ const corsOptions: cors.CorsOptions = {
 };
 
 // --- MCP Server Setup ---
+// This function now ALWAYS creates a new McpServer instance
 function initializeMcpServerInstance(): McpServer {
-  if (globalMcpServer) {
-    return globalMcpServer;
-  }
+  // if (globalMcpServer) { // Removed check for global instance
+  //   return globalMcpServer;
+  // }
   console.log('[MCP_SERVER_LOG] Initializing McpServer instance and registering tools...');
   const mcpServerOptions: ConstructorParameters<typeof McpServer>[0] = {
     name: "KnowReply-MCP-Server",
@@ -195,15 +196,15 @@ function initializeMcpServerInstance(): McpServer {
   );
   console.log('[MCP_SERVER_LOG] Tool "stripe_getCustomerByEmail" registration attempted.');
 
-  globalMcpServer = server;
-  return globalMcpServer;
+  // globalMcpServer = server; // Removed assignment to global variable
+  return server; // Return the new instance
 }
 
 // --- Main Server Startup Logic ---
 async function startServer() {
   try {
     await fetchAndSetInternalApiKey();
-    globalMcpServer = initializeMcpServerInstance(); // Initialize global MCP server instance
+    // globalMcpServer = initializeMcpServerInstance(); // Global McpServer initialization removed
 
     // Global transport and its connection at startup are removed.
     // globalTransport = new StreamableHTTPServerTransport({
@@ -224,21 +225,47 @@ async function startServer() {
     });
 
     app.post('/mcp', authenticateApiKey, async (req: express.Request, res: express.Response) => {
+      // ==========================================================================================
+      // UNRESOLVED ISSUE: "Method not found"
+      // ------------------------------------------------------------------------------------------
+      // Despite various architectural approaches, the MCP SDK consistently returns a
+      // "Method not found" error (JSON-RPC error code -32601) when attempting to call
+      // registered tools like "stripe_getCustomerByEmail".
+      //
+      // Current Architecture:
+      // - Per-request McpServer instances (created by `initializeMcpServerInstance`).
+      // - Per-request StreamableHTTPServerTransport instances.
+      // This aligns with the apparent stateless model suggested by the example name
+      // `simpleStatelessStreamableHttp.ts` that was referenced.
+      //
+      // Other Architectures Tried:
+      // 1. Global McpServer, Per-request Transport: Still "Method not found".
+      // 2. Global McpServer, Global Transport (connected once at startup): Still "Method not found".
+      //
+      // Hypothesis:
+      // The issue may stem from subtle internal workings of the @modelcontextprotocol/sdk,
+      // potentially around tool registration visibility, the `connect` method's effect on the
+      // McpServer instance, or how `StreamableHTTPServerTransport.handleRequest` dispatches
+      // method calls. Without SDK documentation or source access, further debugging is limited.
+      // The tool's own internal console.log is never reached, indicating a dispatch failure.
+      // ==========================================================================================
       console.log(`[MCP_SERVER_LOG] Received request for method: ${req.body?.method} (ID: ${req.body?.id})`);
-      // Create per-request transport
-      const transport = new StreamableHTTPServerTransport({
+
+      const mcpInstance = initializeMcpServerInstance(); // Create per-request McpServer instance
+      const transport = new StreamableHTTPServerTransport({ // Create per-request transport
         sessionIdGenerator: undefined,
       });
 
       res.on('close', () => {
-        console.log(`Request to /mcp closed by client. Closing MCP transport for this request.`);
+        console.log('Request to /mcp closed by client. Closing MCP transport and per-request server instance.');
         transport.close(); // Close per-request transport
-        // globalMcpServer.close(); // Global server should not be closed per request
+        mcpInstance.close(); // Close per-request McpServer instance
       });
 
       try {
-        console.log('[MCP_SERVER_LOG] Connecting globalMcpServer to per-request transport.');
-        await globalMcpServer.connect(transport); // Connect global server to per-request transport
+        console.log('[MCP_SERVER_LOG] Connecting per-request McpServer to per-request transport.');
+        await mcpInstance.connect(transport); // Connect per-request server to per-request transport
+        // console.log('[MCP_SERVER_LOG] Post-connect check: mcpInstance has tool "stripe_getCustomerByEmail"?', mcpInstance.hasTool?.('stripe_getCustomerByEmail') ?? 'cannot check'); // Removed failing diagnostic
         await transport.handleRequest(req, res, req.body); // Use per-request transport
       } catch (error: any) {
         console.error('Error handling MCP request in /mcp route:', error.message, error.stack);
@@ -269,12 +296,19 @@ async function startServer() {
     });
 
   } catch (error: any) {
-    console.error('Failed to start server:', error.message, error.stack);
+    console.error('Failed to start server (outer catch):', error.message, error.stack);
+    console.error('OUTER CATCH: PROCESS IS EXITING DUE TO FAILURE IN startServer()');
     process.exit(1);
   }
 }
 
-startServer();
+startServer().then(() => {
+  console.log('startServer promise resolved. Server should be running.');
+}).catch(err => {
+  console.error('startServer promise rejected:', err.message, err.stack);
+  console.error('PROMISE REJECT: PROCESS IS EXITING DUE TO ASYNC FAILURE IN startServer() CHAIN');
+  process.exit(1);
+});
 
 process.on('uncaughtException', (err) => {
   console.error('UNCAUGHT EXCEPTION:', err.message, err.stack);
