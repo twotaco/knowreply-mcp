@@ -1,13 +1,13 @@
 # Mock Centralized Provider (MCP) Server
 
-The Mock Centralized Provider (MCP) Server is a Node.js application that provides a unified interface to interact with various third-party services. Some handlers in this server connect to **live third-party APIs** (e.g., Stripe), while others use **mock implementations** (e.g., HubSpot, Shopify, Klaviyo, Zendesk, Calendly). It's designed for development, testing, and abstracting service interactions.
+The Mock Centralized Provider (MCP) Server is a Node.js application that provides a unified interface to interact with various third-party services. This server connects to **live third-party APIs** for services like Stripe, WooCommerce, and WordPress. It also includes mock implementations for others (e.g., HubSpot, Zendesk, Calendly) and some specific live API MCPs that are safer to mock for certain operations (e.g., Stripe's `createCheckoutSession`). It's designed for development, testing, and abstracting service interactions.
 
 ## Features
 
 -   **Unified Interface**: Access different providers through a consistent API endpoint structure.
 -   **Live & Mock Implementations**:
-    -   Connects to live Stripe APIs for real-time data interaction (for most Stripe MCPs).
-    -   Includes mock handlers for other services like HubSpot, Shopify, Klaviyo, Zendesk, and Calendly, and some specific Stripe MCPs (e.g. `createCheckoutSession`) for predictable testing environments.
+    -   Connects to live Stripe, WooCommerce, and WordPress APIs for real-time data interaction.
+    -   Includes mock handlers for other services like HubSpot, Zendesk, and Calendly, and some specific Stripe MCPs (e.g. `createCheckoutSession`) for predictable testing environments.
 -   **Service Discovery**: A `GET /discover` endpoint to dynamically fetch available providers, actions, argument schemas, and sample payloads.
 -   **CORS Support**: Configurable Cross-Origin Resource Sharing to allow requests from authorized frontend origins.
 -   **Request Validation**: Uses Zod to validate incoming request arguments and authentication details for all handlers.
@@ -115,6 +115,11 @@ Consult `GET /discover` for available MCPs and arguments.
       "auth": { "token": "THIRD_PARTY_API_KEY_PLACEHOLDER" }
     }
     ```
+Note: The structure of the `auth` object and where credentials (like API keys, URLs) are placed can vary by provider. 
+-   **Stripe** typically uses `auth: { "token": "YOUR_STRIPE_SECRET_KEY" }`.
+-   **WooCommerce** handlers currently expect `baseUrl`, `consumerKey`, and `consumerSecret` within the `args` object itself.
+-   **WordPress** handlers expect `auth: { "baseUrl": "YOUR_WP_SITE_URL", "token": "YOUR_WP_TOKEN_OPTIONAL" }`.
+Always refer to the specific examples below or the `/discover` endpoint for the precise requirements of each action.
 
 ## Available MCP Handlers
 
@@ -122,10 +127,14 @@ This list is dynamically generated and available via `GET /discover`. Handlers f
 
 **Stripe (`/mcp/stripe/*`)** (Mostly Live API)
 *   `getCustomerByEmail` (Live)
-*   `getLastInvoice` (Live)
+*   `getCustomerById` (Live)
+*   `getPaymentIntentById` (Live)
+*   `getInvoices` (Live)
+*   `sendInvoice` (Live)
+*   `getLastInvoice` (Live) 
 *   `getNextBillingDate` (Live)
-*   `issueRefund` (Live)
-*   `createCheckoutSession` (Mock)
+*   `issueRefund` (Live) 
+*   `createCheckoutSession` (Mock) 
 
 **HubSpot (`/mcp/hubspot/*`)** (Mock)
 *   `getContactByEmail`
@@ -133,16 +142,18 @@ This list is dynamically generated and available via `GET /discover`. Handlers f
 *   `getTicketStatus`
 *   `createTicket`
 
-**Shopify (`/mcp/shopify/*`)** (Mock)
-*   `getOrderStatus`
-*   `cancelOrder`
-*   `getCustomerOrders`
-*   `getCustomerByEmail`
-*   `getLatestOrder` 
+**WooCommerce (`/mcp/woocommerce/*`)** (Live API)
+*   `getOrders`
+*   `getOrderById`
+*   `getCustomers`
+*   `getProducts`
+*   `createOrderNote`
+*   `createDraftOrder`
 
-**Klaviyo (`/mcp/klaviyo/*`)** (Mock)
-*   `getEmailHistory`
-*   `getCartStatus`
+**WordPress (`/mcp/wordpress/*`)** (Live API)
+*   `getUsers` (Requires Auth)
+*   `getPages` (Auth optional for public content)
+*   `getPosts` (Auth optional for public content)
 
 **Zendesk (`/mcp/zendesk/*`)** (Mock)
 *   `getTicketByEmail`
@@ -176,6 +187,42 @@ The `GET /discover` endpoint is the authoritative source for available actions a
     -d '{ "args": { "email": "customer@example.com" }, "auth": { "token": "sk_test_YOUR_STRIPE_TEST_KEY" } }'
     ```
 
+#### Stripe `getCustomerById` (Live)
+-   **Purpose**: Retrieves a specific customer's details from Stripe by their ID.
+-   **Args**: `{"customerId": "cus_xxxxxxxxxxxxxx"}`
+-   **Auth Token**: "Stripe Secret Key"
+-   **Example `curl` (local):**
+    ```bash
+    curl -X POST http://localhost:3000/mcp/stripe/getCustomerById \
+    -H "Content-Type: application/json" \
+    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
+    -d '{ "args": { "customerId": "cus_xxxxxxxxxxxxxx" }, "auth": { "token": "sk_test_YOUR_STRIPE_TEST_KEY" } }'
+    ```
+
+#### Stripe `getInvoices` (Live)
+-   **Purpose**: Lists invoices, optionally filtered by customer, subscription, or status.
+-   **Args**: `{"customerId": "cus_xxxxxxxxxxxxxx", "limit": 5}` (see `/discover` for all options)
+-   **Auth Token**: "Stripe Secret Key"
+-   **Example `curl` (local):**
+    ```bash
+    curl -X POST http://localhost:3000/mcp/stripe/getInvoices \
+    -H "Content-Type: application/json" \
+    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
+    -d '{ "args": { "customerId": "cus_xxxxxxxxxxxxxx", "limit": 5 }, "auth": { "token": "sk_test_YOUR_STRIPE_TEST_KEY" } }'
+    ```
+
+#### Stripe `sendInvoice` (Live)
+-   **Purpose**: Sends or re-sends an invoice to the customer.
+-   **Args**: `{"invoiceId": "in_xxxxxxxxxxxxxx"}`
+-   **Auth Token**: "Stripe Secret Key"
+-   **Example `curl` (local):**
+    ```bash
+    curl -X POST http://localhost:3000/mcp/stripe/sendInvoice \
+    -H "Content-Type: application/json" \
+    -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
+    -d '{ "args": { "invoiceId": "in_xxxxxxxxxxxxxx" }, "auth": { "token": "sk_test_YOUR_STRIPE_TEST_KEY" } }'
+    ```
+
 *(Other Stripe examples for live MCPs like `getLastInvoice`, `getNextBillingDate`, `issueRefund` follow a similar structure. `stripe.createCheckoutSession` is still a mock.)*
 
 ### HubSpot MCPs (Mock)
@@ -188,48 +235,56 @@ The `GET /discover` endpoint is the authoritative source for available actions a
     -d '{ "args": { "email": "contact@example.com" }, "auth": { "token": "YOUR_HUBSPOT_API_KEY_HERE" } }'
     ```
 
-### Shopify MCPs (Mock)
-(Example: `shopify.getOrderStatus`)
+### WooCommerce MCPs (Live)
+**Note:** WooCommerce MCPs require `baseUrl`, `consumerKey`, and `consumerSecret` to be passed in the `args` object for each request. Refer to the `/discover` endpoint for the exact structure.
+
+#### WooCommerce `getOrders` (Live)
+-   **Purpose**: Retrieves a list of orders, can be filtered by email, status, etc.
+-   **Args**: `{"baseUrl": "https://yourstore.com", "consumerKey": "ck_xxx", "consumerSecret": "cs_xxx", "email": "customer@example.com"}`
 -   **Example `curl` (local):**
     ```bash
-    curl -X POST http://localhost:3000/mcp/shopify/getOrderStatus \
+    curl -X POST http://localhost:3000/mcp/woocommerce/getOrders \
     -H "Content-Type: application/json" \
     -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "orderId": "shopify_order_12345" }, "auth": { "token": "YOUR_SHOPIFY_ADMIN_API_TOKEN" } }'
+    -d '{ "args": { "baseUrl": "https://yourstore.com", "consumerKey": "ck_xxxx", "consumerSecret": "cs_xxxx", "email": "customer@example.com" } }'
     ```
 
-#### Shopify `getCustomerByEmail` (Mock)
--   **Purpose**: Retrieves customer information from Shopify based on their email address. Designed to interact with `GET /admin/api/2025-04/customers/search.json`.
--   **Args**: As per `/discover` (e.g., `{"email": "customer@example.com"}`)
--   **Auth Token**: "YOUR_SHOPIFY_ADMIN_API_ACCESS_TOKEN" (Note: For actual Shopify API, this would be an Admin API access token. The `SHOPIFY_API_KEY` and `SHOPIFY_API_PASSWORD` from your `.env` are used by the handler internally for Basic Auth).
+#### WooCommerce `createOrderNote` (Live)
+-   **Purpose**: Adds a private note to an existing order.
+-   **Args**: `{"baseUrl": "https://yourstore.com", "consumerKey": "ck_xxx", "consumerSecret": "cs_xxx", "orderId": 123, "note": "Customer requested an update."}`
 -   **Example `curl` (local):**
     ```bash
-    curl -X POST http://localhost:3000/mcp/shopify/getCustomerByEmail \
+    curl -X POST http://localhost:3000/mcp/woocommerce/createOrderNote \
     -H "Content-Type: application/json" \
     -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "email": "customer@example.com" }, "auth": { "token": "unused_for_this_mock_but_auth_obj_is_required" } }'
+    -d '{ "args": { "baseUrl": "https://yourstore.com", "consumerKey": "ck_xxxx", "consumerSecret": "cs_xxxx", "orderId": 123, "note": "Customer requested an update." } }'
     ```
 
-#### Shopify `getLatestOrder` (Mock)
--   **Purpose**: Retrieves the latest order for a given Shopify customer ID. Designed to interact with `GET /admin/api/2025-04/orders.json`.
--   **Args**: As per `/discover` (e.g., `{"customerId": "1234567890"}`)
--   **Auth Token**: "YOUR_SHOPIFY_ADMIN_API_ACCESS_TOKEN" (As above, used internally by handler).
+### WordPress MCPs (Live)
+**Note:** WordPress MCPs require `baseUrl` and an authentication `token` (e.g., Application Password) to be passed in the `auth` object (i.e., `auth.baseUrl`, `auth.token`). For `getPages` and `getPosts`, the `token` is optional for public content.
+
+#### WordPress `getUsers` (Live)
+-   **Purpose**: Retrieves WordPress users. Can be searched by email or search term.
+-   **Args**: `{"email": "user@example.com"}`
+-   **Auth**: `{"baseUrl": "https://yourwp.site", "token": "YOUR_WP_APP_PASSWORD"}`
 -   **Example `curl` (local):**
     ```bash
-    curl -X POST http://localhost:3000/mcp/shopify/getLatestOrder \
+    curl -X POST http://localhost:3000/mcp/wordpress/getUsers \
     -H "Content-Type: application/json" \
     -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "customerId": 1234567890 }, "auth": { "token": "unused_for_this_mock_but_auth_obj_is_required" } }'
+    -d '{ "args": { "email": "user@example.com" }, "auth": { "baseUrl": "https://yourwp.site", "token": "YOUR_WP_APP_PASSWORD_OR_TOKEN" } }'
     ```
 
-### Klaviyo MCPs (Mock)
-(Example: `klaviyo.getEmailHistory`)
--   **Example `curl` (local):**
+#### WordPress `getPages` (Live)
+-   **Purpose**: Retrieves WordPress pages. Can be filtered by search or slug. Token optional for public pages.
+-   **Args**: `{"slug": "about-us"}`
+-   **Auth**: `{"baseUrl": "https://yourwp.site", "token": "YOUR_WP_APP_PASSWORD_OPTIONAL"}`
+-   **Example `curl` (local for public page):**
     ```bash
-    curl -X POST http://localhost:3000/mcp/klaviyo/getEmailHistory \
+    curl -X POST http://localhost:3000/mcp/wordpress/getPages \
     -H "Content-Type: application/json" \
     -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "email": "user@example.com" }, "auth": { "token": "YOUR_KLAVIYO_API_TOKEN" } }'
+    -d '{ "args": { "slug": "about-us" }, "auth": { "baseUrl": "https://yourwp.site" } }'
     ```
 
 ### Zendesk MCPs (Mock)
