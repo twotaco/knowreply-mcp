@@ -136,7 +136,7 @@ async function startServer() {
 
           try {
             const actionFiles = fs.readdirSync(providerDirPath)
-              .filter(file => file.endsWith('.js'));
+              .filter(file => file.endsWith('.js') && !file.endsWith('.test.js'));
 
             for (const fileName of actionFiles) {
               const actionName = fileName.replace('.js', '');
