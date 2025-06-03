@@ -1,131 +1,94 @@
-const z = require('zod');
+const { z } = require('zod');
 
-// Zod Schemas for validation
+// Zod Schema for arguments
 const ArgsSchema = z.object({
   subject: z.string().min(1, { message: "Ticket subject cannot be empty." }),
   contactId: z.string().min(1, { message: "Associated contact ID cannot be empty." }),
   description: z.string().min(1, { message: "Ticket description cannot be empty." })
 });
 
-const AuthSchema = z.object({
-  token: z.string().min(1, { message: "API token cannot be empty." }) // For HubSpot API key
+// Zod Schema for connection object
+const ConnectionSchema = z.object({
+  token: z.string().optional().describe("HubSpot API key (placeholder for mock).")
 });
 
 // Internal function to simulate a call to the HubSpot API
-async function _mockHubspotApi_createTicket({ subject, contactId, description, apiKey }) {
-  console.log(`_mockHubspotApi_createTicket: Simulating HubSpot API call to create ticket.`);
-  console.log(`_mockHubspotApi_createTicket: Subject: ${subject}, ContactID: ${contactId}, Description: ${description}`);
-  console.log(`_mockHubspotApi_createTicket: Using (simulated) API Key: ${apiKey ? apiKey.substring(0, 5) + '...' : 'N/A'}`);
+async function createTicketInternal({ subject, contactId, description, apiKey }) {
+  console.log(`MOCK: hubspot.createTicketInternal - Simulating HubSpot API call.`);
+  // console.log(`MOCK: hubspot.createTicketInternal - Subject: ${subject}, ContactID: ${contactId}, Description: ${description}`);
+  // console.log(`MOCK: hubspot.createTicketInternal - Using (simulated) API Key: ${apiKey ? apiKey.substring(0, 5) + '...' : 'N/A'}`);
 
-  // Basic validation for mock
   if (contactId === "hub_contact_nonexistent") {
-    return "mock_api_error_contact_not_found";
+    throw new Error("Mock HubSpot API Error: Associated contact not found. Cannot create ticket.");
   }
 
   const newTicketId = `hub_ticket_mock_${Math.random().toString(36).substring(2, 9)}`;
-  const newTicket = {
+  const mockCreatedTicket = {
     id: newTicketId,
     properties: {
       subject: subject,
-      content: description,
-      hs_pipeline: "0", // Default to Support Pipeline
-      hs_pipeline_stage: "1", // Default to "New" or "Open" stage
+      content: description, // HubSpot usually uses 'content' for ticket description
+      hs_pipeline: "0", // Default to Support Pipeline (ID '0' is common)
+      hs_pipeline_stage: "1", // Default to "New" or "Open" stage (ID '1' is common for 'New')
       createdate: new Date().toISOString(),
       lastmodifieddate: new Date().toISOString(),
     },
-    associations: {
-        "contacts": {
-            "results": [
-                { "id": contactId, "type": "ticket_to_contact" }
-            ]
-        }
-    }
+    // HubSpot API v3 for tickets might not directly return associations like this in a simple create.
+    // Associations are typically managed via a separate associations API.
+    // For a mock, we can include it if our transformed response expects it.
+    // associations: {
+    //     "contacts": {
+    //         "results": [
+    //             { "id": contactId, "type": "ticket_to_contact" }
+    //         ]
+    //     }
+    // }
   };
 
-  // Optionally, store in a mock DB if needed for other operations, but not strictly for create
-  // mockTicketsDb[newTicketId] = newTicket;
+  // Transform to desired MCP response structure
+  // These maps are illustrative; actual IDs/names depend on the HubSpot instance.
+  const pipelineMap = { "0": "Support Pipeline" };
+  const stageMap = { "1": "New" }; // hs_pipeline_stage '1' often means "New" in default Support pipeline
 
-  return newTicket; // Return the newly created ticket object
+  return {
+    ticketId: mockCreatedTicket.id,
+    subject: mockCreatedTicket.properties.subject,
+    // Assuming 'status' means the pipeline stage name for this MCP response
+    status: stageMap[mockCreatedTicket.properties.hs_pipeline_stage] || mockCreatedTicket.properties.hs_pipeline_stage,
+    pipeline: pipelineMap[mockCreatedTicket.properties.hs_pipeline] || mockCreatedTicket.properties.hs_pipeline,
+    createdAt: mockCreatedTicket.properties.createdate,
+    // description: mockCreatedTicket.properties.content, // Optionally return description
+    // contactId: contactId // Optionally confirm associated contactId
+  };
 }
 
-async function handleCreateTicket({ args, auth }) {
-  console.log('Executing MCP: hubspot.createTicket');
-
-  // Validate args
-  const parsedArgs = ArgsSchema.safeParse(args);
-  if (!parsedArgs.success) {
-    console.warn('MCP: hubspot.createTicket - Invalid arguments:', parsedArgs.error.flatten().fieldErrors);
-    return {
-      success: false,
-      message: "Invalid arguments.",
-      errors: parsedArgs.error.flatten().fieldErrors,
-      data: null
-    };
-  }
-
-  // Validate auth
-  const parsedAuth = AuthSchema.safeParse(auth);
-  if (!parsedAuth.success) {
-    console.warn('MCP: hubspot.createTicket - Invalid auth:', parsedAuth.error.flatten().fieldErrors);
-    return {
-      success: false,
-      message: "Invalid auth information.",
-      errors: parsedAuth.error.flatten().fieldErrors,
-      data: null
-    };
-  }
-
-  // Use validated data
-  const { subject, contactId, description } = parsedArgs.data;
-  const { token: apiKey } = parsedAuth.data; // HubSpot API Key
-
-  console.log('Received auth token (simulated use for HubSpot API key):', apiKey ? apiKey.substring(0,5) + '...' : 'No API key provided');
+// Main handler function called by server.js
+async function handler({ args, auth }) {
+  const parsedArgs = ArgsSchema.parse(args);
+  const parsedAuth = ConnectionSchema.parse(auth);
 
   try {
-    const ticketCreationResult = await _mockHubspotApi_createTicket({ subject, contactId, description, apiKey });
-
-    if (ticketCreationResult === "mock_api_error_contact_not_found") {
-      return {
-        success: false,
-        message: "Associated contact not found (simulated). Cannot create ticket.",
-        data: null,
-      };
-    } else if (ticketCreationResult && ticketCreationResult.id) {
-      // As per design doc: "Return ticket ID and status."
-      const stageMap = { "0": "Support Pipeline" }; // Example mapping
-      const statusMap = { "1": "New" }; // Example mapping
-
-      const responseData = {
-        ticketId: ticketCreationResult.id,
-        subject: ticketCreationResult.properties.subject,
-        status: statusMap[ticketCreationResult.properties.hs_pipeline_stage] || ticketCreationResult.properties.hs_pipeline_stage,
-        pipeline: stageMap[ticketCreationResult.properties.hs_pipeline] || ticketCreationResult.properties.hs_pipeline,
-        createdAt: ticketCreationResult.properties.createdate
-      };
-      return {
-        success: true,
-        data: responseData,
-        message: "Ticket created successfully."
-      };
-    } else {
-      return {
-        success: false,
-        message: "An unexpected error or response occurred during ticket creation.",
-        data: null,
-      };
-    }
+    const ticketData = await createTicketInternal({
+      subject: parsedArgs.subject,
+      contactId: parsedArgs.contactId,
+      description: parsedArgs.description,
+      apiKey: parsedAuth.token
+    });
+    return ticketData;
   } catch (error) {
-    console.error("Error calling _mockHubspotApi_createTicket:", error);
-    return {
-      success: false,
-      message: "An unexpected error occurred while trying to create the ticket.",
-      data: null,
-    };
+    console.error(`Error in hubspot.createTicket handler: ${error.message}`);
+    throw new Error(`HubSpot Handler Error: ${error.message}`);
   }
 }
 
 module.exports = {
-  handler: handleCreateTicket,
-  ArgsSchema: ArgsSchema,
-  AuthSchema: AuthSchema
+  handler,
+  ArgsSchema,
+  ConnectionSchema,
+  meta: {
+    description: "MOCK: Creates a new ticket in HubSpot and associates it with a contact.",
+    parameters: ArgsSchema.shape,
+    auth: ['token (optional)'],
+    authRequirements: "HubSpot API Key (placeholder for mock, passed as 'token' in auth object).",
+  }
 };

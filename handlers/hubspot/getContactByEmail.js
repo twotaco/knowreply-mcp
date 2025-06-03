@@ -1,21 +1,25 @@
-const z = require('zod');
+const { z } = require('zod');
 
-// Zod Schemas for validation
+// Zod Schema for arguments
 const ArgsSchema = z.object({
   email: z.string().email({ message: "Invalid email format." })
 });
 
-const AuthSchema = z.object({
-  token: z.string().min(1, { message: "API token cannot be empty." }) // For HubSpot API key
+// Zod Schema for connection object
+// For mock handlers, the token might be a placeholder or not strictly validated if the mock doesn't use it.
+// However, for consistency in /discover, we define it.
+const ConnectionSchema = z.object({
+  token: z.string().optional().describe("HubSpot API key (placeholder for mock).")
 });
 
 // Internal function to simulate a call to the HubSpot API
-async function _mockHubspotApi_getContactByEmail({ email, apiKey }) {
-  console.log(`_mockHubspotApi_getContactByEmail: Simulating HubSpot API call for email: ${email}`);
-  console.log(`_mockHubspotApi_getContactByEmail: Using (simulated) API Key: ${apiKey ? apiKey.substring(0, 5) + '...' : 'N/A'}`);
+async function getContactByEmailInternal({ email, apiKey }) {
+  console.log(`MOCK: hubspot.getContactByEmailInternal - Simulating HubSpot API call for email: ${email}`);
+  // apiKey is available from ConnectionSchema but might not be used by the mock
+  // console.log(`MOCK: hubspot.getContactByEmailInternal - Using (simulated) API Key: ${apiKey ? apiKey.substring(0, 5) + '...' : 'N/A'}`);
 
   if (email === "contact@example.com") {
-    return { // Simulates a found contact object from HubSpot
+    const mockHubspotContact = {
       id: "hub_contact_12345",
       properties: {
         email: "contact@example.com",
@@ -23,93 +27,52 @@ async function _mockHubspotApi_getContactByEmail({ email, apiKey }) {
         lastname: "Contact",
         company: "Example Corp",
         lifecyclestage: "customer"
-        // other HubSpot specific fields...
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+    return {
+      id: mockHubspotContact.id,
+      email: mockHubspotContact.properties.email,
+      name: `${mockHubspotContact.properties.firstname || ''} ${mockHubspotContact.properties.lastname || ''}`.trim(),
+      company: mockHubspotContact.properties.company,
+      lifecycleStage: mockHubspotContact.properties.lifecyclestage
+    };
   } else if (email === "notfound@example.com") {
-    return null; // Simulates HubSpot API returning null or an empty list when contact not found
-  } else {
-    return "mock_api_error_unsupported_email";
+    return null;
+  } else if (email === "error@example.com") {
+    throw new Error("Mock HubSpot API Error: Unable to process this email.");
   }
+  return null;
 }
 
-async function handleGetContactByEmail({ args, auth }) {
-  console.log('Executing MCP: hubspot.getContactByEmail');
-
-  // Validate args
-  const parsedArgs = ArgsSchema.safeParse(args);
-  if (!parsedArgs.success) {
-    console.warn('MCP: hubspot.getContactByEmail - Invalid arguments:', parsedArgs.error.flatten().fieldErrors);
-    return {
-      success: false,
-      message: "Invalid arguments.",
-      errors: parsedArgs.error.flatten().fieldErrors,
-      data: null
-    };
-  }
-
-  // Validate auth
-  const parsedAuth = AuthSchema.safeParse(auth);
-  if (!parsedAuth.success) {
-    console.warn('MCP: hubspot.getContactByEmail - Invalid auth:', parsedAuth.error.flatten().fieldErrors);
-    return {
-      success: false,
-      message: "Invalid auth information.",
-      errors: parsedAuth.error.flatten().fieldErrors,
-      data: null
-    };
-  }
-
-  // Use validated data
-  const { email } = parsedArgs.data;
-  const { token: apiKey } = parsedAuth.data; // HubSpot API Key
-
-  console.log('Received auth token (simulated use for HubSpot API key):', apiKey ? apiKey.substring(0,5) + '...' : 'No API key provided');
+// Main handler function called by server.js
+async function handler({ args, auth }) {
+  const parsedArgs = ArgsSchema.parse(args);
+  const parsedAuth = ConnectionSchema.parse(auth);
 
   try {
-    const contactData = await _mockHubspotApi_getContactByEmail({ email, apiKey });
+    const contactData = await getContactByEmailInternal({
+      email: parsedArgs.email,
+      apiKey: parsedAuth.token
+    });
 
-    if (contactData === "mock_api_error_unsupported_email") {
-      return {
-        success: false,
-        message: "Unable to process this email with the current mock HubSpot API setup.",
-        data: null,
-      };
-    } else if (contactData) {
-      // Extracting key fields as per design doc
-      const responseData = {
-        id: contactData.id,
-        email: contactData.properties.email,
-        name: `${contactData.properties.firstname || ''} ${contactData.properties.lastname || ''}`.trim(),
-        company: contactData.properties.company,
-        lifecycleStage: contactData.properties.lifecyclestage
-      };
-      return {
-        success: true,
-        data: responseData,
-        message: "Contact found."
-      };
-    } else { // contactData is null
-      return {
-        success: true,
-        data: null,
-        message: "Contact not found."
-      };
-    }
+    return contactData;
+
   } catch (error) {
-    console.error("Error calling _mockHubspotApi_getContactByEmail:", error);
-    return {
-      success: false,
-      message: "An unexpected error occurred while trying to retrieve contact data.",
-      data: null,
-    };
+    console.error(`Error in hubspot.getContactByEmail handler: ${error.message}`);
+    throw new Error(`HubSpot Handler Error: ${error.message}`);
   }
 }
 
 module.exports = {
-  handler: handleGetContactByEmail,
-  ArgsSchema: ArgsSchema,
-  AuthSchema: AuthSchema
+  handler,
+  ArgsSchema,
+  ConnectionSchema,
+  meta: {
+    description: "MOCK: Fetches a contact from HubSpot by their email address.",
+    parameters: ArgsSchema.shape,
+    auth: ['token (optional)'],
+    authRequirements: "HubSpot API Key (placeholder for mock, passed as 'token' in auth object).",
+  }
 };

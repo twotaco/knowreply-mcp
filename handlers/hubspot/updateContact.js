@@ -1,16 +1,20 @@
-const z = require('zod');
+const { z } = require('zod');
 
-// Zod Schemas for validation
+// Zod Schema for arguments
 const ArgsSchema = z.object({
   contactId: z.string().min(1, { message: "Contact ID cannot be empty." }),
-  updates: z.object({}).passthrough() // Allows any properties for updates, can be refined
+  updates: z.object({}).passthrough().describe("An object containing properties to update on the contact.")
 });
 
-const AuthSchema = z.object({
-  token: z.string().min(1, { message: "API token cannot be empty." }) // For HubSpot API key
+// Zod Schema for connection object
+const ConnectionSchema = z.object({
+  token: z.string().optional().describe("HubSpot API key (placeholder for mock).")
 });
 
-// Mock data store for contacts (to simulate updates)
+// Mock data store for contacts
+// Note: This mock DB is reset on each require/test run if tests clear module cache.
+// For more persistent mock state across calls *within a single test without cache clearing*,
+// this would need to be handled differently (e.g., exporting/importing the DB or more complex setup).
 const mockContactsDb = {
   "hub_contact_12345": {
     id: "hub_contact_12345",
@@ -27,10 +31,10 @@ const mockContactsDb = {
 };
 
 // Internal function to simulate a call to the HubSpot API
-async function _mockHubspotApi_updateContact({ contactId, updates, apiKey }) {
-  console.log(`_mockHubspotApi_updateContact: Simulating HubSpot API call to update contactId: ${contactId}`);
-  console.log(`_mockHubspotApi_updateContact: Updates: ${JSON.stringify(updates)}`);
-  console.log(`_mockHubspotApi_updateContact: Using (simulated) API Key: ${apiKey ? apiKey.substring(0, 5) + '...' : 'N/A'}`);
+async function updateContactInternal({ contactId, updates, apiKey }) {
+  console.log(`MOCK: hubspot.updateContactInternal - Simulating HubSpot API call to update contactId: ${contactId}`);
+  // console.log(`MOCK: hubspot.updateContactInternal - Updates: ${JSON.stringify(updates)}`);
+  // console.log(`MOCK: hubspot.updateContactInternal - Using (simulated) API Key: ${apiKey ? apiKey.substring(0, 5) + '...' : 'N/A'}`);
 
   if (mockContactsDb[contactId]) {
     // Simulate updating the contact
@@ -39,96 +43,49 @@ async function _mockHubspotApi_updateContact({ contactId, updates, apiKey }) {
       ...updates
     };
     mockContactsDb[contactId].updatedAt = new Date().toISOString();
-    return { // Simulates a successful update response from HubSpot
+
+    return {
       id: contactId,
-      properties: mockContactsDb[contactId].properties,
+      updatedProperties: mockContactsDb[contactId].properties,
       updatedAt: mockContactsDb[contactId].updatedAt
     };
   } else if (contactId === "hub_contact_nonexistent") {
-    return "mock_api_error_contact_not_found";
-  } else {
-    return "mock_api_error_update_failed";
+    // This specific ID is used to test a "not found" error throw
+    throw new Error("Mock HubSpot API Error: Contact not found.");
+  } else if (contactId === "hub_contact_update_error") {
+    // This specific ID is used to test a generic update error
+    throw new Error("Mock HubSpot API Error: Failed to update contact (simulated error).");
   }
+  // For any other contactId not in mockContactsDb, simulate as if it's a "not found" during an update attempt.
+  throw new Error(`Mock HubSpot API Error: Contact with ID ${contactId} not found for update.`);
 }
 
-async function handleUpdateContact({ args, auth }) {
-  console.log('Executing MCP: hubspot.updateContact');
-
-  // Validate args
-  const parsedArgs = ArgsSchema.safeParse(args);
-  if (!parsedArgs.success) {
-    console.warn('MCP: hubspot.updateContact - Invalid arguments:', parsedArgs.error.flatten().fieldErrors);
-    return {
-      success: false,
-      message: "Invalid arguments.",
-      errors: parsedArgs.error.flatten().fieldErrors,
-      data: null
-    };
-  }
-
-  // Validate auth
-  const parsedAuth = AuthSchema.safeParse(auth);
-  if (!parsedAuth.success) {
-    console.warn('MCP: hubspot.updateContact - Invalid auth:', parsedAuth.error.flatten().fieldErrors);
-    return {
-      success: false,
-      message: "Invalid auth information.",
-      errors: parsedAuth.error.flatten().fieldErrors,
-      data: null
-    };
-  }
-
-  // Use validated data
-  const { contactId, updates } = parsedArgs.data;
-  const { token: apiKey } = parsedAuth.data; // HubSpot API Key
-
-  console.log('Received auth token (simulated use for HubSpot API key):', apiKey ? apiKey.substring(0,5) + '...' : 'No API key provided');
+// Main handler function called by server.js
+async function handler({ args, auth }) {
+  const parsedArgs = ArgsSchema.parse(args);
+  const parsedAuth = ConnectionSchema.parse(auth);
 
   try {
-    const updateResult = await _mockHubspotApi_updateContact({ contactId, updates, apiKey });
-
-    if (updateResult === "mock_api_error_contact_not_found") {
-      return {
-        success: false,
-        message: "Contact not found (simulated).",
-        data: null,
-      };
-    } else if (updateResult === "mock_api_error_update_failed") {
-      return {
-        success: false,
-        message: "Failed to update contact (simulated).",
-        data: null,
-      };
-    } else if (updateResult && updateResult.id) {
-      // As per design doc: "Return confirmation with new values."
-      return {
-        success: true,
-        data: {
-          id: updateResult.id,
-          updatedProperties: updateResult.properties, // Send back all properties after update
-          updatedAt: updateResult.updatedAt
-        },
-        message: "Contact updated successfully."
-      };
-    } else {
-      return {
-        success: false,
-        message: "An unexpected error or response occurred during contact update.",
-        data: null,
-      };
-    }
+    const updateResult = await updateContactInternal({
+      contactId: parsedArgs.contactId,
+      updates: parsedArgs.updates,
+      apiKey: parsedAuth.token
+    });
+    return updateResult;
   } catch (error) {
-    console.error("Error calling _mockHubspotApi_updateContact:", error);
-    return {
-      success: false,
-      message: "An unexpected error occurred while trying to update contact data.",
-      data: null,
-    };
+    console.error(`Error in hubspot.updateContact handler: ${error.message}`);
+    throw new Error(`HubSpot Handler Error: ${error.message}`);
   }
 }
 
 module.exports = {
-  handler: handleUpdateContact,
-  ArgsSchema: ArgsSchema,
-  AuthSchema: AuthSchema
+  handler,
+  ArgsSchema,
+  ConnectionSchema,
+  meta: {
+    description: "MOCK: Updates properties of an existing contact in HubSpot.",
+    parameters: ArgsSchema.shape,
+    auth: ['token (optional)'],
+    authRequirements: "HubSpot API Key (placeholder for mock, passed as 'token' in auth object).",
+  }
 };

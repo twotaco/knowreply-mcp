@@ -1,5 +1,5 @@
 // handlers/wordpress/getPosts.test.js
-const { handler, ArgsSchema, AuthSchema } = require('./getPosts');
+const { handler, ArgsSchema, ConnectionSchema } = require('./getPosts'); // Updated to import ConnectionSchema
 const axios = require('axios');
 
 jest.mock('axios');
@@ -12,7 +12,7 @@ describe('WordPress getPosts Handler', () => {
     axios.get.mockReset();
   });
 
-  const validAuthBase = { baseUrl: mockBaseUrl }; // Token is optional
+  const validAuthBase = { baseUrl: mockBaseUrl }; // Token is optional, compatible with ConnectionSchema
   const mockPostListResponse = [
     { id: 1, title: { rendered: 'Hello World' }, slug: 'hello-world', categories: [10], tags: [20] },
     { id: 2, title: { rendered: 'Another Post' }, slug: 'another-post', categories: [11], tags: [21] }
@@ -20,13 +20,13 @@ describe('WordPress getPosts Handler', () => {
 
   it('should fetch posts with no token and no filters (public posts)', async () => {
     axios.get.mockResolvedValue({ data: mockPostListResponse });
-    const result = await handler({ args: {}, auth: validAuthBase }); // No token
+    const result = await handler({ args: {}, auth: validAuthBase });
 
     expect(axios.get).toHaveBeenCalledWith(
       `${mockBaseUrl}/wp-json/wp/v2/posts`,
       {
         params: {},
-        headers: { 'Content-Type': 'application/json' }, // No Authorization header
+        headers: { 'Content-Type': 'application/json' },
       }
     );
     expect(result).toEqual(mockPostListResponse);
@@ -53,7 +53,7 @@ describe('WordPress getPosts Handler', () => {
   });
 
   it('should fetch posts with category ID (number) filter', async () => {
-    const args = { categories: 10 }; // Single category ID as number
+    const args = { categories: 10 };
     axios.get.mockResolvedValue({ data: [mockPostListResponse[0]] });
     await handler({ args, auth: validAuthBase });
 
@@ -119,18 +119,18 @@ describe('WordPress getPosts Handler', () => {
     await expect(handler({ args: {}, auth: validAuthBase })).rejects.toThrow('WordPress API Error: Some other WP post error.');
   });
 
-  const expectZodError = async (args, auth, expectedMessagePart) => {
+  const expectZodError = async (args, auth, expectedMessagePart, isExact = false) => { // Added isExact
       try {
           await handler({ args, auth });
           throw new Error('Handler did not throw an error as expected.');
       } catch (error) {
           expect(error.name).toBe('ZodError');
-          const hasMatchingError = error.errors.some(err => err.message.includes(expectedMessagePart));
-          expect(hasMatchingError).toBe(true);
+          const foundError = error.errors.find(e => isExact ? e.message === expectedMessagePart : e.message.includes(expectedMessagePart));
+          expect(foundError).toBeDefined();
       }
   };
 
-  describe('ArgsSchema and AuthSchema Validation', () => {
+  describe('ArgsSchema and ConnectionSchema Validation', () => { // Updated describe
     it('should accept empty args (all filters optional)', async () => {
       axios.get.mockResolvedValue({ data: mockPostListResponse });
       await expect(handler({ args: {}, auth: validAuthBase })).resolves.toEqual(mockPostListResponse);
@@ -158,7 +158,28 @@ describe('WordPress getPosts Handler', () => {
     });
 
     it('should throw Zod error if baseUrl is missing in auth', async () => {
-      await expectZodError({}, { token: mockToken }, "Required");
+      await expectZodError({}, { token: mockToken }, "Required", true);
+    });
+
+    it('should throw Zod error if baseUrl is invalid in auth', async () => {
+      await expectZodError({}, { baseUrl: 'invalid-url', token: mockToken }, "WordPress base URL is required.");
+    });
+
+    it('should NOT throw Zod error if token is missing in auth (token is optional)', async () => {
+      axios.get.mockResolvedValue({ data: mockPostListResponse });
+      await expect(handler({ args: {}, auth: { baseUrl: mockBaseUrl } })).resolves.toEqual(mockPostListResponse);
+    });
+
+    it('should accept empty string token (Zod pass) and not send Authorization header', async () => {
+      const authWithEmptyToken = { ...validAuthBase, token: "" };
+      axios.get.mockResolvedValue({ data: mockPostListResponse });
+      await expect(handler({ args: {}, auth: authWithEmptyToken })).resolves.toEqual(mockPostListResponse);
+      expect(axios.get).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: { 'Content-Type': 'application/json' } // No Authorization header
+        })
+      );
     });
   });
 });
