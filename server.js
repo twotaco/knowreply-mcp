@@ -133,28 +133,33 @@ async function startServer() {
         for (const providerName of providerDirs) {
           const providerDirPath = path.join(handlersBasePath, providerName);
           const actions = [];
-          let connectionSchemaDetails = null; // Variable to hold connection schema
-          let actionFiles = []; // Define actionFiles here to use it for ConnectionSchema and providerData.auth_requirements_general
+          let connectionSchemaDetails = null;
+          let providerAuthRequirements = null; // For provider-level auth requirements string
+          let actionFiles = [];
 
           try {
             actionFiles = fs.readdirSync(providerDirPath)
               .filter(file => file.endsWith('.js') && !file.endsWith('.test.js'));
 
-            // Logic to get ConnectionSchema from the first available handler in the provider directory
             if (actionFiles.length > 0) {
               const firstHandlerName = actionFiles[0];
               const firstHandlerPath = path.join(providerDirPath, firstHandlerName);
               try {
-                // No need to clear cache here if ConnectionSchema is static and defined at module level
-                const firstHandlerModule = require(firstHandlerPath);
-                if (firstHandlerModule.ConnectionSchema && typeof firstHandlerModule.ConnectionSchema.parse === 'function') {
-                  connectionSchemaDetails = getZodSchemaDetails(firstHandlerModule.ConnectionSchema);
+                // Require the module once to get ConnectionSchema and meta.authRequirements
+                // Cache clearing for this specific require might not be essential if these are static top-level exports
+                // delete require.cache[require.resolve(firstHandlerPath)]; // Optional safety for this specific require
+                const tempHandlerModule = require(firstHandlerPath);
+
+                if (tempHandlerModule.ConnectionSchema && typeof tempHandlerModule.ConnectionSchema.parse === 'function') {
+                  connectionSchemaDetails = getZodSchemaDetails(tempHandlerModule.ConnectionSchema);
                 } else {
-                  // This is not necessarily a warning if a provider doesn't use ConnectionSchema (e.g. fully public)
-                  // console.log(`[Discover] ConnectionSchema not found or not a Zod schema for provider ${providerName} (checked in ${firstHandlerName})`);
+                  console.warn(`[Discover] ConnectionSchema not found or not a Zod schema for provider ${providerName} (checked in ${firstHandlerName})`);
+                }
+                if (tempHandlerModule.meta && tempHandlerModule.meta.authRequirements) {
+                  providerAuthRequirements = tempHandlerModule.meta.authRequirements;
                 }
               } catch (err) {
-                console.error(`[Discover] Error loading ConnectionSchema for provider ${providerName} from ${firstHandlerName}: ${err.message}`);
+                console.error(`[Discover] Error loading ConnectionSchema/meta for provider ${providerName} from ${firstHandlerName}: ${err.message}`);
               }
             }
 
@@ -166,12 +171,12 @@ async function startServer() {
                 description: `Handles ${toTitleCase(actionName)} for ${toTitleCase(providerName)}.`,
                 args_schema: {},
                 sample_payload: {}
-                // auth_requirements will be added below
               };
 
               try {
                 const handlerPath = path.join(providerDirPath, fileName);
-                delete require.cache[require.resolve(handlerPath)]; // Clear cache for each handler module
+                // Crucial: Clear cache for each handler to get its specific ArgsSchema and meta
+                delete require.cache[require.resolve(handlerPath)];
                 const handlerModule = require(handlerPath);
 
                 if (handlerModule.ArgsSchema && typeof handlerModule.ArgsSchema.parse === 'function') {
@@ -183,11 +188,9 @@ async function startServer() {
                    actionMeta.description += " (Argument schema unavailable or not a Zod schema)";
                 }
 
-                // Add meta.description from handler if it exists, overriding the default
                 if (handlerModule.meta && handlerModule.meta.description) {
                     actionMeta.description = handlerModule.meta.description;
                 }
-                // Add meta.authRequirements from handler to the action if it exists
                 if (handlerModule.meta && handlerModule.meta.authRequirements) {
                     actionMeta.auth_requirements = handlerModule.meta.authRequirements;
                 }
@@ -202,32 +205,18 @@ async function startServer() {
             console.error(`[Discover] Error reading actions for provider ${providerName}: ${err.message}`);
           }
 
-          if (actions.length > 0 || connectionSchemaDetails) { // Push provider if it has actions OR a connection schema
+          if (actions.length > 0 || connectionSchemaDetails) {
             const providerData = {
               provider_name: providerName,
               display_name: toTitleCase(providerName),
               description: `Actions related to ${toTitleCase(providerName)}.`,
               actions: actions
             };
-
             if (connectionSchemaDetails) {
               providerData.connection_schema = connectionSchemaDetails;
             }
-
-            // Attempt to get a general auth_requirements from the first handler's meta for the provider display
-            if (actionFiles.length > 0) {
-                const firstHandlerName = actionFiles[0];
-                const firstHandlerPath = path.join(providerDirPath, firstHandlerName);
-                try {
-                    // Module should already be in cache from ConnectionSchema load, or will be fresh if that failed.
-                    // No need to delete cache again for a static meta property.
-                    const firstHandlerModule = require(firstHandlerPath);
-                    if (firstHandlerModule.meta && firstHandlerModule.meta.authRequirements) {
-                         providerData.auth_requirements_general = firstHandlerModule.meta.authRequirements;
-                    }
-                } catch (err) {
-                    console.warn(`[Discover] Could not read meta.authRequirements for provider ${providerName} from ${firstHandlerName}: ${err.message}`);
-                }
+            if (providerAuthRequirements) {
+                providerData.auth_requirements_general = providerAuthRequirements;
             }
             providers.push(providerData);
           }

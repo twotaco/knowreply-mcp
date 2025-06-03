@@ -31,14 +31,46 @@ The `/discover` endpoint allows clients to dynamically fetch a list of all avail
         {
           "provider_name": "stripe",
           "display_name": "Stripe",
-          "description": "Actions related to Stripe (Live API for most actions).",
+          "description": "Actions related to Woocommerce.",
+          "auth_requirements_general": "Requires WooCommerce Base URL, Consumer Key, and Consumer Secret in the auth object.",
+          "connection_schema": {
+            "baseUrl": { "type": "ZodString", "description": "WooCommerce site URL e.g. https://yourstore.com" },
+            "consumerKey": { "type": "ZodString", "description": "WooCommerce API Consumer Key" },
+            "consumerSecret": { "type": "ZodString", "description": "WooCommerce API Consumer Secret" }
+          },
+          "actions": [
+            {
+              "action_name": "getOrders",
+              "display_name": "Get Orders",
+              "description": "Fetches orders from WooCommerce...",
+              "auth_requirements": "Requires WooCommerce Base URL, Consumer Key, and Consumer Secret in the auth object.",
+              "args_schema": {
+                "email": { "type": "ZodString", "optional": true }
+                // ... other action-specific args
+              },
+              "sample_payload": {
+                "email": "customer@example.com"
+              }
+            }
+            // ... more WooCommerce actions
+          ]
+        },
+        {
+          "provider_name": "stripe",
+          "display_name": "Stripe",
+          "description": "Actions related to Stripe.",
+          "auth_requirements_general": "Requires a Stripe Secret Key as 'token' in the auth object.",
+          "connection_schema": {
+            "token": { "type": "ZodString", "description": "Stripe Secret Key (sk_live_... or sk_test_...)" }
+          },
           "actions": [
             {
               "action_name": "getCustomerByEmail",
               "display_name": "Get Customer By Email",
-              "description": "Handles Get Customer By Email for Stripe.",
+              "description": "Fetches a customer from Stripe by their email address. Returns the first customer if multiple exist with the same email.",
+              "auth_requirements": "Requires a Stripe Secret Key as 'token' in the auth object.",
               "args_schema": {
-                "email": "ZodString"
+                "email": { "type": "ZodString", "description": "Invalid email format."}
               },
               "sample_payload": {
                 "email": "user@example.com"
@@ -52,7 +84,9 @@ The `/discover` endpoint allows clients to dynamically fetch a list of all avail
     }
     ```
 -   **Important Note on Metadata:**
-    The `description`, `args_schema`, and `sample_payload` fields are dynamically generated. Descriptions are generally placeholders. The `args_schema` provides a simplified view of Zod types. For richer metadata, future enhancements may involve handlers exporting specific metadata objects.
+    The `description`, `args_schema`, and `sample_payload` fields are dynamically generated. The `args_schema` provides a simplified view of Zod types.
+    -   **`connection_schema`**: Each provider entry may now include a `connection_schema`. This object defines the structure and Zod types for the connection/authentication parameters (e.g., API keys, base URLs) expected by that provider. These parameters should be passed in the `auth` object of your MCP request.
+    -   **`auth_requirements_general` / `auth_requirements`**: These fields provide a human-readable string describing the authentication needs, found at both the provider level and potentially at the individual action level if an action has specific requirements.
 -   **Up-to-date Information:**
     This endpoint always reflects the current state of available MCP handlers in the `handlers/` directory.
 
@@ -115,11 +149,7 @@ Consult `GET /discover` for available MCPs and arguments.
       "auth": { "token": "THIRD_PARTY_API_KEY_PLACEHOLDER" }
     }
     ```
-Note: The structure of the `auth` object and where credentials (like API keys, URLs) are placed can vary by provider.
--   **Stripe** typically uses `auth: { "token": "YOUR_STRIPE_SECRET_KEY" }`.
--   **WooCommerce** handlers currently expect `baseUrl`, `consumerKey`, and `consumerSecret` within the `args` object itself.
--   **WordPress** handlers expect `auth: { "baseUrl": "YOUR_WP_SITE_URL", "token": "YOUR_WP_TOKEN_OPTIONAL" }`.
-Always refer to the specific examples below or the `/discover` endpoint for the precise requirements of each action.
+Note: The structure of the `auth` object is defined by the `connection_schema` for each provider, found in the `/discover` endpoint response. This object contains the necessary credentials (like API keys, URLs, etc.) for the MCP server to authenticate with the third-party service. The `args` object contains parameters specific to the action being called.
 
 ## Available MCP Handlers
 
@@ -224,44 +254,62 @@ The `GET /discover` endpoint is the authoritative source for available actions a
     ```
 
 *(Other Stripe examples for live MCPs like `getLastInvoice`, `getNextBillingDate`, `issueRefund` follow a similar structure. `stripe.createCheckoutSession` is still a mock.)*
+**Note:** Stripe MCPs require your Stripe Secret Key to be passed as `token` in the `auth` object, as defined by its `connection_schema` in `/discover`.
 
 ### HubSpot MCPs (Mock)
+**Note:** HubSpot MCPs are mock implementations. The `connection_schema` in `/discover` indicates an optional `token` field in the `auth` object, which serves as a placeholder.
 (Example: `hubspot.getContactByEmail`)
 -   **Example `curl` (local):**
     ```bash
     curl -X POST http://localhost:3000/mcp/hubspot/getContactByEmail \
     -H "Content-Type: application/json" \
     -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "email": "contact@example.com" }, "auth": { "token": "YOUR_HUBSPOT_API_KEY_HERE" } }'
+    -d '{ "args": { "email": "contact@example.com" }, "auth": { "token": "YOUR_HUBSPOT_API_KEY_PLACEHOLDER" } }'
     ```
 
 ### WooCommerce MCPs (Live)
-**Note:** WooCommerce MCPs require `baseUrl`, `consumerKey`, and `consumerSecret` to be passed in the `args` object for each request. Refer to the `/discover` endpoint for the exact structure.
+**Note:** WooCommerce MCPs require `baseUrl`, `consumerKey`, and `consumerSecret` to be passed in the `auth` object for each request. Consult the `connection_schema` from `/discover` for details.
 
 #### WooCommerce `getOrders` (Live)
 -   **Purpose**: Retrieves a list of orders, can be filtered by email, status, etc.
--   **Args**: `{"baseUrl": "https://yourstore.com", "consumerKey": "ck_xxx", "consumerSecret": "cs_xxx", "email": "customer@example.com"}`
+-   **Args**: `{"email": "customer@example.com"}`
+-   **Auth**: `{"baseUrl": "https://yourstore.com", "consumerKey": "ck_xxx", "consumerSecret": "cs_xxx"}`
 -   **Example `curl` (local):**
     ```bash
     curl -X POST http://localhost:3000/mcp/woocommerce/getOrders \
     -H "Content-Type: application/json" \
     -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "baseUrl": "https://yourstore.com", "consumerKey": "ck_xxxx", "consumerSecret": "cs_xxxx", "email": "customer@example.com" } }'
+    -d '{
+      "args": { "email": "customer@example.com" },
+      "auth": {
+        "baseUrl": "https://yourstore.com",
+        "consumerKey": "ck_xxxx",
+        "consumerSecret": "cs_xxxx"
+      }
+    }'
     ```
 
 #### WooCommerce `createOrderNote` (Live)
 -   **Purpose**: Adds a private note to an existing order.
--   **Args**: `{"baseUrl": "https://yourstore.com", "consumerKey": "ck_xxx", "consumerSecret": "cs_xxx", "orderId": 123, "note": "Customer requested an update."}`
+-   **Args**: `{"orderId": 123, "note": "Customer requested an update."}`
+-   **Auth**: `{"baseUrl": "https://yourstore.com", "consumerKey": "ck_xxx", "consumerSecret": "cs_xxx"}`
 -   **Example `curl` (local):**
     ```bash
     curl -X POST http://localhost:3000/mcp/woocommerce/createOrderNote \
     -H "Content-Type: application/json" \
     -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
-    -d '{ "args": { "baseUrl": "https://yourstore.com", "consumerKey": "ck_xxxx", "consumerSecret": "cs_xxxx", "orderId": 123, "note": "Customer requested an update." } }'
+    -d '{
+      "args": { "orderId": 123, "note": "Customer requested an update." },
+      "auth": {
+        "baseUrl": "https://yourstore.com",
+        "consumerKey": "ck_xxxx",
+        "consumerSecret": "cs_xxxx"
+      }
+    }'
     ```
 
 ### WordPress MCPs (Live)
-**Note:** WordPress MCPs require `baseUrl` and an authentication `token` (e.g., Application Password) to be passed in the `auth` object (i.e., `auth.baseUrl`, `auth.token`). For `getPages` and `getPosts`, the `token` is optional for public content.
+**Note:** WordPress MCPs require `baseUrl` and an authentication `token` (e.g., Application Password) to be passed in the `auth` object, as defined by its `connection_schema` in `/discover`. For `getPages` and `getPosts`, the `token` is optional for public content.
 
 #### WordPress `getUsers` (Live)
 -   **Purpose**: Retrieves WordPress users. Can be searched by email or search term.
