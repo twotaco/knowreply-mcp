@@ -8,6 +8,21 @@ const ConnectionSchema = z.object({
   consumerSecret: z.string().min(1, { message: "WooCommerce Consumer Secret is required." })
 });
 
+// Zod Schema for the WooCommerce Order Note object (the output of this handler)
+const WooCommerceOrderNoteSchema = z.object({
+  id: z.number().int(),
+  author: z.string().optional(), // Can be 'system' or a user display name
+  date_created: z.string().datetime({ message: "Invalid ISO date format for date_created" }),
+  date_created_gmt: z.string().datetime({ message: "Invalid ISO date format for date_created_gmt" }),
+  note: z.string(),
+  customer_note: z.boolean(),
+  added_by_user: z.boolean().optional(), // Indicates if the note was added by a staff user via admin UI
+  // Other fields like 'user_id' might appear but are less canonical for a generic schema.
+}).passthrough(); // Allow other fields WooCommerce might send
+
+// The OutputSchema for the handler. It's not nullable because errors are thrown on failure.
+const OutputSchema = WooCommerceOrderNoteSchema;
+
 // Zod schema for input arguments
 const ArgsSchema = z.object({
   orderId: z.union([
@@ -73,6 +88,7 @@ module.exports = {
   handler,
   ArgsSchema,
   ConnectionSchema,
+  OutputSchema, // Export the OutputSchema
   meta: {
     description: "Creates a note for a specific order in WooCommerce. Can be a private note (default) or a customer-visible note.", // Updated description
     // parameters: ArgsSchema.shape, // server.js /discover logic will use ArgsSchema

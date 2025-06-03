@@ -18,6 +18,21 @@ const ConnectionSchema = z.object({
   token: z.string().min(1, { message: "Stripe API key (secret key) is required." })
 });
 
+// Zod Schema for the structure returned by issueRefundInternal
+const RefundOutputObjectSchema = z.object({
+  id: z.string(),
+  amount: z.number().int(), // Amount in cents
+  charge: z.string(), // ID of the charge that was refunded
+  currency: z.string(),
+  status: z.string(), // e.g., 'succeeded', 'pending', 'failed', 'canceled'
+  reason: z.string().nullable().optional(), // Reason can be null if not provided or if Stripe returns it as null
+  created: z.string().datetime({ message: "Invalid ISO date format for created" }), // ISO8601 date string
+  // metadata is intentionally omitted as it's commented out in the handler's return object.
+}).passthrough(); // Allow other fields just in case, though the object is manually constructed.
+
+// The OutputSchema for the handler. It's not nullable because errors during refund creation are thrown.
+const OutputSchema = RefundOutputObjectSchema;
+
 async function issueRefundInternal({ chargeId, apiKey, amount, reason }) {
   const requestBody = {
     charge: chargeId,
@@ -91,6 +106,7 @@ module.exports = {
   handler,
   ArgsSchema,
   ConnectionSchema,
+  OutputSchema, // Export the OutputSchema
   meta: {
     description: "Issues a refund for a specific charge in Stripe. Amount is optional (full refund if omitted).",
     parameters: ArgsSchema.shape,

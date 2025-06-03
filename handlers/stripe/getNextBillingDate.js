@@ -11,6 +11,20 @@ const ConnectionSchema = z.object({
   token: z.string().min(1, { message: "Stripe API key (secret key) is required." })
 });
 
+// Zod Schema for the object returned by getNextBillingDateInternal when a subscription is found
+const NextBillingDateObjectSchema = z.object({
+  customerId: z.string(),
+  subscriptionId: z.string(),
+  nextBillingDate: z.string().datetime({ message: "Invalid ISO date format for nextBillingDate" }),
+  planId: z.string().optional(), // plan.id might not exist if the plan is deleted or structure changes
+  planName: z.string(), // Defaulted to 'N/A' if not found, so it should always be a string
+  status: z.string(), // Based on the query, this should be 'active'
+  trialEndDate: z.string().datetime({ message: "Invalid ISO date format for trialEndDate" }).nullable(), // Can be null
+}).passthrough(); // Allow passthrough just in case, though the object is manually constructed
+
+// The actual OutputSchema for the handler, which can be null if no active subscription is found
+const OutputSchema = NextBillingDateObjectSchema.nullable();
+
 async function getNextBillingDateInternal({ customerId, apiKey }) {
   try {
     const response = await axios.get('https://api.stripe.com/v1/subscriptions', {
@@ -76,6 +90,7 @@ module.exports = {
   handler,
   ArgsSchema,
   ConnectionSchema,
+  OutputSchema, // Export the OutputSchema
   meta: {
     description: "Fetches the next billing date for a customer by looking at their most recent active subscription.",
     parameters: ArgsSchema.shape,

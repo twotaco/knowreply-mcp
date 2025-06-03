@@ -22,6 +22,50 @@ const ConnectionSchema = z.object({
   token: z.string().optional().describe("WordPress authentication token (e.g., Application Password). Needed for non-public posts.")
 });
 
+// --- Output Schemas ---
+
+// Reusable schema for fields like title, content, excerpt, guid which have a 'rendered' property
+const WordPressRenderedContentSchema = z.object({
+  rendered: z.string(),
+  protected: z.boolean().optional(), // Often present for content/excerpt
+}).passthrough();
+
+// Zod Schema for an individual WordPress Post
+const WordPressPostSchema = z.object({
+  id: z.number().int(),
+  date: z.string().datetime({ message: "Invalid ISO date format for date" }),
+  date_gmt: z.string().datetime({ message: "Invalid ISO date format for date_gmt" }),
+  guid: WordPressRenderedContentSchema,
+  modified: z.string().datetime({ message: "Invalid ISO date format for modified" }),
+  modified_gmt: z.string().datetime({ message: "Invalid ISO date format for modified_gmt" }),
+  slug: z.string(),
+  status: z.enum(['publish', 'future', 'draft', 'pending', 'private', 'trash', 'auto-draft'])
+            .describe("Post status."),
+  type: z.literal('post').describe("Post type, should always be 'post' for this endpoint."),
+  link: z.string().url(),
+  title: WordPressRenderedContentSchema,
+  content: WordPressRenderedContentSchema,
+  excerpt: WordPressRenderedContentSchema,
+  author: z.number().int().describe("User ID of the author."),
+  featured_media: z.number().int().optional().describe("ID of the featured media. 0 if none."),
+  comment_status: z.enum(['open', 'closed']).describe("Whether comments are open or closed."),
+  ping_status: z.enum(['open', 'closed']).describe("Whether pings are open or closed."),
+  sticky: z.boolean().optional().describe("Whether the post is sticky."),
+  template: z.string().optional().describe("The theme template file used for the post."),
+  format: z.string().optional().describe("Post format (e.g., 'standard', 'aside', 'gallery')."),
+  meta: z.record(z.string(), z.any()).optional().describe("Meta fields. Structure can vary."),
+  categories: z.array(z.number().int()).describe("Array of category IDs."),
+  tags: z.array(z.number().int()).describe("Array of tag IDs."),
+  // Common ACF (Advanced Custom Fields) structure, if present (highly variable)
+  // acf: z.record(z.string(), z.any()).optional(),
+  _links: z.record(z.string(), z.array(z.object({ href: z.string().url() }).merge(z.any()))).optional().describe("WordPress REST API links object."),
+}).passthrough(); // Allow other fields WordPress or plugins might add
+
+// The OutputSchema for the handler is an array of Post objects.
+// It's not nullable because an error is thrown on failure, and an empty array is a valid success response.
+const OutputSchema = z.array(WordPressPostSchema);
+// --- End of Output Schemas ---
+
 async function getPostsInternal({ baseUrl, token, search, categories, tags /*, context, per_page*/ }) {
   const params = {
     // context: context,
@@ -87,7 +131,8 @@ async function handler({ args, auth }) {
 module.exports = {
   handler,
   ArgsSchema,
-  ConnectionSchema, // Export ConnectionSchema instead of AuthSchema
+  ConnectionSchema,
+  OutputSchema, // Export the OutputSchema
   meta: {
     description: "Fetches posts from WordPress. Supports filtering by search term, category IDs, or tag IDs. Authentication is optional for public posts.",
     parameters: ArgsSchema.shape,

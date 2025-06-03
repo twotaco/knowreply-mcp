@@ -14,6 +14,48 @@ const ConnectionSchema = z.object({
   token: z.string().optional().describe("WordPress authentication token (e.g., Application Password). Needed for non-public pages.")
 });
 
+// --- Output Schemas ---
+
+// Reusable schema for fields like title, content, excerpt, guid which have a 'rendered' property
+const WordPressRenderedContentSchema = z.object({
+  rendered: z.string(),
+  protected: z.boolean().optional(), // Often present for content/excerpt
+}).passthrough(); // Allows other potential sub-fields like 'raw' (e.g. with context=edit)
+
+// Zod Schema for an individual WordPress Page
+const WordPressPageSchema = z.object({
+  id: z.number().int(),
+  date: z.string().datetime({ message: "Invalid ISO date format for date" }),
+  date_gmt: z.string().datetime({ message: "Invalid ISO date format for date_gmt" }),
+  guid: WordPressRenderedContentSchema,
+  modified: z.string().datetime({ message: "Invalid ISO date format for modified" }),
+  modified_gmt: z.string().datetime({ message: "Invalid ISO date format for modified_gmt" }),
+  slug: z.string(),
+  status: z.enum(['publish', 'future', 'draft', 'pending', 'private', 'trash', 'auto-draft'])
+            .describe("Page status."), // Added 'auto-draft'
+  type: z.literal('page').describe("Post type, should always be 'page' for this endpoint."),
+  link: z.string().url(),
+  title: WordPressRenderedContentSchema,
+  content: WordPressRenderedContentSchema,
+  excerpt: WordPressRenderedContentSchema,
+  author: z.number().int().describe("User ID of the author."),
+  featured_media: z.number().int().optional().describe("ID of the featured media (image/video). 0 if none."),
+  parent: z.number().int().optional().describe("ID of the parent page. 0 if it's a top-level page."),
+  menu_order: z.number().int().optional(),
+  comment_status: z.enum(['open', 'closed']).describe("Whether comments are open or closed."),
+  ping_status: z.enum(['open', 'closed']).describe("Whether pings are open or closed."),
+  template: z.string().optional().describe("The page template file, e.g., 'default', 'template-full-width.php'."),
+  meta: z.record(z.string(), z.any()).optional().describe("Meta fields. Structure can vary greatly."),
+  // Common ACF (Advanced Custom Fields) structure, if present (highly variable)
+  // acf: z.record(z.string(), z.any()).optional(),
+  _links: z.record(z.string(), z.array(z.object({ href: z.string().url() }).merge(z.any()))).optional().describe("WordPress REST API links object."),
+}).passthrough(); // Allow other fields WordPress or plugins might add
+
+// The OutputSchema for the handler is an array of Page objects.
+// It's not nullable because an error is thrown on failure, and an empty array is a valid success response.
+const OutputSchema = z.array(WordPressPageSchema);
+// --- End of Output Schemas ---
+
 async function getPagesInternal({ baseUrl, token, search, slug /*, context*/ }) {
   const params = {
     // context: context,
@@ -75,7 +117,8 @@ async function handler({ args, auth }) {
 module.exports = {
   handler,
   ArgsSchema,
-  ConnectionSchema, // Export ConnectionSchema instead of AuthSchema
+  ConnectionSchema,
+  OutputSchema, // Export the OutputSchema
   meta: {
     description: "Fetches pages from WordPress. Supports filtering by search term or slug. Authentication is optional for public pages but required for private/draft pages.",
     parameters: ArgsSchema.shape,

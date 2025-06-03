@@ -8,6 +8,56 @@ const ConnectionSchema = z.object({
   consumerSecret: z.string().min(1, { message: "WooCommerce Consumer Secret is required." })
 });
 
+// --- Output Schemas ---
+
+// Zod Schema for a WooCommerce Address (used in Customer billing/shipping for Output)
+const WooCommerceAddressSchema = z.object({
+  first_name: z.string().optional(),
+  last_name: z.string().optional(),
+  company: z.string().optional(),
+  address_1: z.string().optional(),
+  address_2: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  postcode: z.string().optional(),
+  country: z.string().optional(),
+  email: z.string().email().optional(), // Billing/shipping email might differ
+  phone: z.string().optional(),
+}).passthrough().nullable(); // Address block itself might be null or empty object {}
+
+// Zod Schema for WooCommerce Meta Data (used in Customer for Output)
+const WooCommerceMetaDataSchema = z.object({
+  id: z.number().int().optional(), // Meta ID
+  key: z.string(),
+  value: z.any(), // Value can be of any type
+}).passthrough();
+
+// Zod Schema for an individual WooCommerce Customer (for Output)
+const WooCommerceCustomerSchema = z.object({
+  id: z.number().int(),
+  date_created: z.string().datetime({ message: "Invalid ISO date format for date_created" }),
+  date_created_gmt: z.string().datetime({ message: "Invalid ISO date format for date_created_gmt" }),
+  date_modified: z.string().datetime({ message: "Invalid ISO date format for date_modified" }),
+  date_modified_gmt: z.string().datetime({ message: "Invalid ISO date format for date_modified_gmt" }),
+  email: z.string().email(),
+  first_name: z.string(), // WooCommerce typically returns empty string if not set, not null
+  last_name: z.string(),  // WooCommerce typically returns empty string if not set, not null
+  role: z.string().optional(), // Role like 'customer'
+  username: z.string(),
+  billing: WooCommerceAddressSchema,
+  shipping: WooCommerceAddressSchema,
+  is_paying_customer: z.boolean().optional(),
+  avatar_url: z.string().url().optional(),
+  meta_data: z.array(WooCommerceMetaDataSchema).optional(),
+  // Other fields like orders_count, total_spent might appear.
+  // _links: z.any().optional(), // Links to related resources
+}).passthrough();
+
+// The OutputSchema for the handler is an array of Customer objects.
+// It's not nullable because an error is thrown on failure, and an empty array is a valid success response.
+const OutputSchema = z.array(WooCommerceCustomerSchema);
+// --- End of Output Schemas ---
+
 // Zod schema for input arguments (filters)
 const ArgsSchema = z.object({
   email: z.string().email({ message: "Invalid email format" }).optional(),
@@ -54,7 +104,8 @@ async function handler({ args, auth }) {
 module.exports = {
   handler,
   ArgsSchema,
-  ConnectionSchema, // Add this
+  ConnectionSchema,
+  OutputSchema, // Export the OutputSchema
   meta: {
     description: "Fetches customers from WooCommerce. Supports filtering by email or a general search term.",
     // parameters: ArgsSchema.shape, // server.js /discover logic will use ArgsSchema

@@ -11,6 +11,38 @@ const ConnectionSchema = z.object({
   token: z.string().min(1, { message: "Stripe API key (secret key) is required." })
 });
 
+// Zod Schema for Line Items within the Last Invoice
+const LastInvoiceLineItemSchema = z.object({
+  id: z.string(),
+  description: z.string().nullable().optional(), // Description can be null or missing
+  amount: z.number().int(),
+  currency: z.string(),
+  quantity: z.number().int().nullable().optional(), // Quantity can be null or missing
+  period: z.object({
+    start: z.number().int(),
+    end: z.number().int(),
+  }).optional(), // Period might not be present on all line item types
+}).passthrough(); // Allow other fields that might be on the line item
+
+// Zod Schema for the structure returned by getLastInvoiceInternal
+const LastInvoiceObjectSchema = z.object({
+  id: z.string(),
+  customer: z.string(),
+  amount_due: z.number().int(),
+  amount_paid: z.number().int(),
+  amount_remaining: z.number().int(),
+  currency: z.string(),
+  status: z.string().nullable().optional(), // Status can be various strings, or null
+  due_date: z.number().int().nullable().optional(), // Unix timestamp or null
+  created: z.number().int(), // Unix timestamp
+  invoice_pdf: z.string().url().nullable().optional(),
+  hosted_invoice_url: z.string().url().nullable().optional(),
+  lines: z.array(LastInvoiceLineItemSchema),
+}).passthrough(); // Allow other top-level fields from the invoice object
+
+// The actual OutputSchema for the handler, which can be null if no invoice is found
+const OutputSchema = LastInvoiceObjectSchema.nullable();
+
 async function getLastInvoiceInternal({ customerId, apiKey }) {
   try {
     const response = await axios.get('https://api.stripe.com/v1/invoices', {
@@ -89,6 +121,7 @@ module.exports = {
   handler,
   ArgsSchema,
   ConnectionSchema,
+  OutputSchema, // Export the OutputSchema
   meta: {
     description: "Fetches the most recent invoice for a given Stripe customer ID.",
     parameters: ArgsSchema.shape,
