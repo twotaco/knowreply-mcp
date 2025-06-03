@@ -134,7 +134,7 @@ async function startServer() {
           const providerDirPath = path.join(handlersBasePath, providerName);
           const actions = [];
           let connectionSchemaDetails = null;
-          let providerAuthRequirements = null; // For provider-level auth requirements string
+          // let providerAuthRequirements = null; // For provider-level auth requirements string -- REMOVED
           let actionFiles = [];
 
           try {
@@ -155,9 +155,9 @@ async function startServer() {
                 } else {
                   console.warn(`[Discover] ConnectionSchema not found or not a Zod schema for provider ${providerName} (checked in ${firstHandlerName})`);
                 }
-                if (tempHandlerModule.meta && tempHandlerModule.meta.authRequirements) {
-                  providerAuthRequirements = tempHandlerModule.meta.authRequirements;
-                }
+                // if (tempHandlerModule.meta && tempHandlerModule.meta.authRequirements) { -- REMOVED
+                //   providerAuthRequirements = tempHandlerModule.meta.authRequirements; -- REMOVED
+                // } -- REMOVED
               } catch (err) {
                 console.error(`[Discover] Error loading ConnectionSchema/meta for provider ${providerName} from ${firstHandlerName}: ${err.message}`);
               }
@@ -191,9 +191,9 @@ async function startServer() {
                 if (handlerModule.meta && handlerModule.meta.description) {
                     actionMeta.description = handlerModule.meta.description;
                 }
-                if (handlerModule.meta && handlerModule.meta.authRequirements) {
-                    actionMeta.auth_requirements = handlerModule.meta.authRequirements;
-                }
+                // if (handlerModule.meta && handlerModule.meta.authRequirements) { -- REMOVED
+                //     actionMeta.auth_requirements = handlerModule.meta.authRequirements; -- REMOVED
+                // } -- REMOVED
 
                 // Add OutputSchema details if available
                 if (handlerModule.OutputSchema && typeof handlerModule.OutputSchema.parse === 'function') {
@@ -228,9 +228,9 @@ async function startServer() {
             if (connectionSchemaDetails) {
               providerData.connection_schema = connectionSchemaDetails;
             }
-            if (providerAuthRequirements) {
-                providerData.auth_requirements_general = providerAuthRequirements;
-            }
+            // if (providerAuthRequirements) { -- REMOVED
+            //     providerData.auth_requirements_general = providerAuthRequirements; -- REMOVED
+            // } -- REMOVED
             providers.push(providerData);
           }
         }
