@@ -41,7 +41,7 @@ describe('WooCommerce createOrderNote Handler', () => {
     );
     expect(result).toEqual(mockResponseNote);
   });
-  
+
   it('should accept string orderId', async () => {
     const stringOrderId = "order_abc123";
     const argsWithStringOrderId = { ...validArgs, orderId: stringOrderId };
@@ -66,10 +66,10 @@ describe('WooCommerce createOrderNote Handler', () => {
 
     await expect(handler({ args: validArgs })).rejects.toThrow(`Order ${mockOrderId} not found when trying to add note: Invalid ID.`);
   });
-  
+
   it('should handle other API errors from WooCommerce', async () => {
     const apiError = new Error('WooCommerce API Error');
-    apiError.response = { status: 400, data: { message: 'Invalid data provided.' } }; 
+    apiError.response = { status: 400, data: { message: 'Invalid data provided.' } };
     axios.post.mockRejectedValue(apiError);
 
     await expect(handler({ args: validArgs })).rejects.toThrow('Invalid data provided.');
@@ -98,22 +98,22 @@ describe('WooCommerce createOrderNote Handler', () => {
       it(`should throw Zod validation error if ${field} is missing`, async () => {
         const incompleteArgs = { ...validArgs };
         delete incompleteArgs[field];
-        
-        let expectedMessage = "Required"; 
+
+        let expectedMessage = "Required";
         // For union types like orderId, Zod might throw "Invalid input" if the field is missing,
         // as 'undefined' doesn't match any part of the union.
         if (field === 'orderId') {
-            expectedMessage = "Invalid input"; 
+            expectedMessage = "Invalid input";
         }
-        
+
         await expectZodError(incompleteArgs, expectedMessage);
       });
     });
-    
+
     it('should throw Zod validation error if baseUrl is invalid', async () => {
       await expectZodError({ ...validArgs, baseUrl: 'not-a-url' }, "Invalid WooCommerce base URL");
     });
-    
+
     ['consumerKey', 'consumerSecret', 'note'].forEach(field => {
          it(`should throw Zod validation error if ${field} is an empty string`, async () => {
             let expectedMessage = "";
@@ -127,7 +127,7 @@ describe('WooCommerce createOrderNote Handler', () => {
     it('should throw Zod validation error if orderId is 0', async () => {
       await expectZodError({ ...validArgs, orderId: 0 }, "Order ID must be a positive integer");
     });
-    
+
     it('should throw Zod validation error if orderId is an empty string', async () => {
       await expectZodError({ ...validArgs, orderId: "" }, "Order ID cannot be empty if a string");
     });

@@ -45,7 +45,7 @@ async function getPagesInternal({ baseUrl, token, search, slug /*, context*/ }) 
       } else {
         errorMessage = `WordPress API Error: Status code ${error.response.status}`;
       }
-      
+
       if ((error.response.status === 401 || error.response.status === 403) && token) {
         errorMessage = `WordPress API Authorization Error: ${error.response.data?.message || 'Check your token and permissions for pages.'}`;
       } else if (error.response.status === 401 && !token) { // If no token was provided and got 401

@@ -47,7 +47,7 @@ describe('Stripe getCustomerById Handler', () => {
 
     await expect(handler({ args: validArgs, auth: validAuth })).rejects.toThrow(`Stripe Customer with ID '${mockCustomerId}' not found.`);
   });
-  
+
   it('should throw an error if Stripe API call fails with other errors', async () => {
     const apiError = new Error('Stripe API Error');
     apiError.response = { data: { error: { message: 'Invalid API Key provided.' } } };
@@ -55,7 +55,7 @@ describe('Stripe getCustomerById Handler', () => {
 
     await expect(handler({ args: validArgs, auth: validAuth })).rejects.toThrow('Stripe API Error: Invalid API Key provided.');
   });
-  
+
   it('should throw an error if Stripe API returns non-2xx without specific error.message in data.error', async () => {
     const apiError = new Error('Request failed with status code 500');
     apiError.response = { status: 500, statusText: 'Server Error', data: {} }; // No data.error.message
@@ -68,7 +68,7 @@ describe('Stripe getCustomerById Handler', () => {
     const networkError = new Error('Network issue');
     networkError.request = {}; // Indicates a request was made
     axios.get.mockRejectedValue(networkError);
-    
+
     await expect(handler({ args: validArgs, auth: validAuth }))
       .rejects.toThrow(`No response received from Stripe API when fetching customer ${mockCustomerId}. Check network connectivity.`);
   });
@@ -100,13 +100,13 @@ describe('Stripe getCustomerById Handler', () => {
       // AuthSchema expects 'token'. If auth is {}, token is missing.
       await expectZodError(validArgs, {}, "Required");
     });
-    
+
     it('should throw Zod error if token is an empty string in auth', async () => {
       // AuthSchema has .min(1) for token.
       await expectZodError(validArgs, { token: "" }, "Stripe API key (secret key) is required.");
     });
   });
-  
+
   // Example for future 'expand' functionality test (currently commented out in handler)
   // it('should include expand parameters if provided', async () => {
   //   const argsWithExpand = { ...validArgs, expand: ['subscriptions', 'default_source'] };

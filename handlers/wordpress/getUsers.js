@@ -28,7 +28,7 @@ async function getUsersInternal({ baseUrl, token, email, search /*, roles, slug,
     // 'search' is the common way, or if you know the user ID.
     // For a direct email lookup, you might need a custom WP endpoint or iterate if 'search' returns many.
     // We'll use 'search' for email for simplicity here, assuming it works for most cases.
-    params.search = email; 
+    params.search = email;
   } else if (search) {
     params.search = search;
   }
@@ -50,7 +50,7 @@ async function getUsersInternal({ baseUrl, token, email, search /*, roles, slug,
     // If searching by a unique email, you might expect 0 or 1 result.
     // If 'email' was used in params.search and multiple users match parts of it, you might get more.
     // For a strict email lookup, client might need to filter response if length > 1.
-    return response.data; 
+    return response.data;
   } catch (error) {
     console.error(`Error fetching users from WordPress: ${error.message}`, error.response?.data);
     let errorMessage = 'Failed to fetch users from WordPress.';
@@ -63,7 +63,7 @@ async function getUsersInternal({ baseUrl, token, email, search /*, roles, slug,
       } else {
         errorMessage = `WordPress API Error: Status code ${error.response.status}`;
       }
-      
+
       if (error.response.status === 401 || error.response.status === 403) {
         errorMessage = `WordPress API Authorization Error: ${error.response.data?.message || 'Check your token and permissions.'}`;
       }

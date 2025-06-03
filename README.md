@@ -115,7 +115,7 @@ Consult `GET /discover` for available MCPs and arguments.
       "auth": { "token": "THIRD_PARTY_API_KEY_PLACEHOLDER" }
     }
     ```
-Note: The structure of the `auth` object and where credentials (like API keys, URLs) are placed can vary by provider. 
+Note: The structure of the `auth` object and where credentials (like API keys, URLs) are placed can vary by provider.
 -   **Stripe** typically uses `auth: { "token": "YOUR_STRIPE_SECRET_KEY" }`.
 -   **WooCommerce** handlers currently expect `baseUrl`, `consumerKey`, and `consumerSecret` within the `args` object itself.
 -   **WordPress** handlers expect `auth: { "baseUrl": "YOUR_WP_SITE_URL", "token": "YOUR_WP_TOKEN_OPTIONAL" }`.
@@ -131,10 +131,10 @@ This list is dynamically generated and available via `GET /discover`. Handlers f
 *   `getPaymentIntentById` (Live)
 *   `getInvoices` (Live)
 *   `sendInvoice` (Live)
-*   `getLastInvoice` (Live) 
+*   `getLastInvoice` (Live)
 *   `getNextBillingDate` (Live)
-*   `issueRefund` (Live) 
-*   `createCheckoutSession` (Mock) 
+*   `issueRefund` (Live)
+*   `createCheckoutSession` (Mock)
 
 **HubSpot (`/mcp/hubspot/*`)** (Mock)
 *   `getContactByEmail`

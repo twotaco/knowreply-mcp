@@ -32,7 +32,7 @@ describe('WooCommerce createDraftOrder Handler', () => {
 
     expect(axios.post).toHaveBeenCalledWith(
       `${mockBaseUrl}/wp-json/wc/v3/orders`,
-      expect.objectContaining({ 
+      expect.objectContaining({
         line_items: minimalOrderData.line_items,
         status: 'draft' // Expecting default status
       }),
@@ -56,7 +56,7 @@ describe('WooCommerce createDraftOrder Handler', () => {
     );
     expect(result).toEqual(mockResponseOrder);
   });
-  
+
   it('should create an order with customer_id and billing/shipping info', async () => {
     const fullOrderData = {
       customer_id: 5,
@@ -82,7 +82,7 @@ describe('WooCommerce createDraftOrder Handler', () => {
   it('should handle API errors from WooCommerce (e.g., invalid product_id)', async () => {
     // Ensure the line_items structure is valid for Zod, but will be rejected by the mock API
     const orderDataWithInvalidProduct = { line_items: [{product_id: 9999, quantity: 1}] };
-    const args = { ...validBaseArgs, orderData: orderDataWithInvalidProduct }; 
+    const args = { ...validBaseArgs, orderData: orderDataWithInvalidProduct };
     const apiError = new Error('API Error');
     apiError.response = { data: { message: 'Invalid product ID.' } };
     axios.post.mockRejectedValue(apiError);
@@ -97,7 +97,7 @@ describe('WooCommerce createDraftOrder Handler', () => {
 
     await expect(handler({ args })).rejects.toThrow('Network Error');
   });
-  
+
   // Helper for Zod validation error checks
   const expectZodError = async (args, expectedMessagePart) => {
       try {
@@ -120,10 +120,10 @@ describe('WooCommerce createDraftOrder Handler', () => {
         await expectZodError(incompleteArgs, "Required");
       });
     });
-    
+
     it('should throw Zod error if orderData.line_items is missing or empty', async () => {
         // Test case for orderData being an empty object (so line_items is missing)
-        await expectZodError({ ...validBaseArgs, orderData: {} }, "Required"); 
+        await expectZodError({ ...validBaseArgs, orderData: {} }, "Required");
         // Test case for line_items being an empty array
         await expectZodError({ ...validBaseArgs, orderData: { line_items: [] } }, "Order must have at least one line item.");
     });
@@ -131,20 +131,20 @@ describe('WooCommerce createDraftOrder Handler', () => {
     it('should throw Zod error if line_items[0].product_id is invalid', async () => {
       await expectZodError({ ...validBaseArgs, orderData: { line_items: [{ product_id: 0 }] } }, "Number must be greater than 0");
     });
-    
+
     it('should throw Zod error if line_items[0].quantity is invalid (e.g. 0)', async () => {
       // The schema has .default(1) for quantity, but if 0 is explicitly passed, it should fail .positive()
       await expectZodError({ ...validBaseArgs, orderData: { line_items: [{ product_id: 1, quantity: 0 }] } }, "Number must be greater than 0");
     });
-    
+
     it('should throw Zod error if status is invalid enum value', async () => {
       await expectZodError({ ...validBaseArgs, orderData: { ...minimalOrderData, status: 'invalid_status' } }, "Invalid enum value.");
     });
-    
+
     it('should throw Zod error if billing.email is invalid', async () => {
-      await expectZodError({ 
-        ...validBaseArgs, 
-        orderData: { ...minimalOrderData, billing: { email: 'not-an-email' } } 
+      await expectZodError({
+        ...validBaseArgs,
+        orderData: { ...minimalOrderData, billing: { email: 'not-an-email' } }
       }, "Invalid email");
     });
 
@@ -159,7 +159,7 @@ describe('WooCommerce createDraftOrder Handler', () => {
             expect.any(String),
             expect.objectContaining({
                 line_items: expect.arrayContaining([
-                    expect.objectContaining({ product_id: 1, quantity: 1 }) 
+                    expect.objectContaining({ product_id: 1, quantity: 1 })
                 ]),
                 status: 'draft' // Also check default status is applied to payload
             }),

@@ -48,7 +48,7 @@ describe('Stripe getPaymentIntentById Handler', () => {
 
     await expect(handler({ args: validArgs, auth: validAuth })).rejects.toThrow(`Stripe Payment Intent with ID '${mockPaymentIntentId}' not found.`);
   });
-  
+
   it('should throw an error if Stripe API call fails with other errors', async () => {
     const apiError = new Error('Stripe API Error');
     apiError.response = { data: { error: { message: 'Authentication required.' } } };
@@ -56,7 +56,7 @@ describe('Stripe getPaymentIntentById Handler', () => {
 
     await expect(handler({ args: validArgs, auth: validAuth })).rejects.toThrow('Stripe API Error: Authentication required.');
   });
-  
+
   it('should throw an error if Stripe API returns non-2xx without specific error.message in data.error', async () => {
     const apiError = new Error('Request failed with status code 503');
     apiError.response = { status: 503, statusText: 'Service Unavailable', data: {} }; // No data.error.message
@@ -69,7 +69,7 @@ describe('Stripe getPaymentIntentById Handler', () => {
     const networkError = new Error('Network problem');
     networkError.request = {}; // Indicates a request was made
     axios.get.mockRejectedValue(networkError);
-    
+
     await expect(handler({ args: validArgs, auth: validAuth }))
       .rejects.toThrow(`No response received from Stripe API when fetching Payment Intent ${mockPaymentIntentId}. Check network connectivity.`);
   });
@@ -101,7 +101,7 @@ describe('Stripe getPaymentIntentById Handler', () => {
       // AuthSchema expects 'token'. If auth is {}, token is missing.
       await expectZodError(validArgs, {}, "Required");
     });
-    
+
     it('should throw Zod error if token is an empty string in auth', async () => {
       // AuthSchema has .min(1) for token.
       await expectZodError(validArgs, { token: "" }, "Stripe API key (secret key) is required.");

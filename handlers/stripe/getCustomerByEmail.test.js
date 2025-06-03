@@ -62,7 +62,7 @@ describe('Stripe getCustomerByEmail Handler', () => {
 
     await expect(handler({ args: validArgs, auth: validAuth })).rejects.toThrow('Stripe API Error: Invalid API Key');
   });
-  
+
   it('should throw an error if Stripe API returns non-2xx without specific error message in data.error.message', async () => {
     const apiError = new Error('Request failed with status code 500');
     apiError.response = { status: 500, statusText: 'Internal Server Error', data: {} }; // No error.message in data.error
@@ -76,7 +76,7 @@ describe('Stripe getCustomerByEmail Handler', () => {
     const networkError = new Error('Network timeout');
     networkError.request = {}; // Indicates a request was made but no response
     axios.get.mockRejectedValue(networkError);
-    
+
     await expect(handler({ args: validArgs, auth: validAuth })).rejects.toThrow('No response received from Stripe API. Check network connectivity.');
   });
 
@@ -95,7 +95,7 @@ describe('Stripe getCustomerByEmail Handler', () => {
   describe('ArgsSchema and AuthSchema Validation', () => {
     it('should throw Zod error if email is missing in args', async () => {
       // ArgsSchema expects 'email'. If args is {}, email is missing.
-      await expectZodError({}, validAuth, "Required"); 
+      await expectZodError({}, validAuth, "Required");
     });
 
     it('should throw Zod error if email is invalid in args', async () => {
@@ -104,9 +104,9 @@ describe('Stripe getCustomerByEmail Handler', () => {
 
     it('should throw Zod error if token is missing in auth', async () => {
       // AuthSchema expects 'token'. If auth is {}, token is missing.
-      await expectZodError(validArgs, {}, "Required"); 
+      await expectZodError(validArgs, {}, "Required");
     });
-    
+
     it('should throw Zod error if token is an empty string in auth', async () => {
       // AuthSchema has .min(1) for token.
       await expectZodError(validArgs, { token: "" }, "Stripe API key (secret key) is required.");

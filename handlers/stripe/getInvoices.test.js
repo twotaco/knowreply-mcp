@@ -57,7 +57,7 @@ describe('Stripe getInvoices Handler', () => {
       expect.objectContaining({ params: { status: 'paid', limit: 10 } })
     );
   });
-  
+
   it('should fetch invoices with subscriptionId and pagination (starting_after)', async () => {
     const args = { subscriptionId: 'sub_123', starting_after: 'in_prev123' };
     axios.get.mockResolvedValue({ data: mockInvoiceListResponse });
@@ -82,7 +82,7 @@ describe('Stripe getInvoices Handler', () => {
     const networkError = new Error('Network problem');
     networkError.request = {}; // Indicates a request was made
     axios.get.mockRejectedValue(networkError);
-    
+
     await expect(handler({ args: {}, auth: validAuth }))
       .rejects.toThrow('No response received from Stripe API when fetching invoices. Check network connectivity.');
   });
@@ -109,11 +109,11 @@ describe('Stripe getInvoices Handler', () => {
       // Zod's message for invalid enum is quite specific.
       await expectZodError({ status: 'pending' }, validAuth, "Invalid enum value. Expected 'draft' | 'open' | 'paid' | 'uncollectible' | 'void'");
     });
-    
+
     it('should throw Zod error for invalid limit type', async () => {
       await expectZodError({ limit: 'not-a-number' }, validAuth, "Expected number, received string");
     });
-    
+
     it('should throw Zod error for limit out of range (e.g., 0 or >100)', async () => {
       await expectZodError({ limit: 0 }, validAuth, "Number must be greater than 0");
       await expectZodError({ limit: 101 }, validAuth, "Number must be less than or equal to 100");
@@ -123,7 +123,7 @@ describe('Stripe getInvoices Handler', () => {
       // AuthSchema expects 'token'. If auth is {}, token is missing.
       await expectZodError({}, {}, "Required");
     });
-    
+
     it('should throw Zod error if token is an empty string in auth', async () => {
       // AuthSchema has .min(1) for token.
       await expectZodError({}, { token: "" }, "Stripe API key (secret key) is required.");

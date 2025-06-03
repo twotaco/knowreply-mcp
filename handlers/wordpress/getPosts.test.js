@@ -37,14 +37,14 @@ describe('WordPress getPosts Handler', () => {
     const authWithToken = { ...validAuthBase, token: mockToken };
     const filteredResponse = [mockPostListResponse[0]];
     axios.get.mockResolvedValue({ data: filteredResponse });
-    
+
     await handler({ args, auth: authWithToken });
 
     expect(axios.get).toHaveBeenCalledWith(
       `${mockBaseUrl}/wp-json/wp/v2/posts`,
-      expect.objectContaining({ 
+      expect.objectContaining({
         params: { search: 'Hello' },
-        headers: expect.objectContaining({ 
+        headers: expect.objectContaining({
             'Authorization': `Bearer ${mockToken}`,
             'Content-Type': 'application/json',
         })
@@ -59,23 +59,23 @@ describe('WordPress getPosts Handler', () => {
 
     expect(axios.get).toHaveBeenCalledWith(
       `${mockBaseUrl}/wp-json/wp/v2/posts`,
-      expect.objectContaining({ 
-          params: { categories: '10' }, 
-          headers: { 'Content-Type': 'application/json' } 
-      }) 
+      expect.objectContaining({
+          params: { categories: '10' },
+          headers: { 'Content-Type': 'application/json' }
+      })
     );
   });
-  
+
   it('should fetch posts with category IDs (comma-separated string) filter', async () => {
-    const args = { categories: '10,15' }; 
+    const args = { categories: '10,15' };
     axios.get.mockResolvedValue({ data: [mockPostListResponse[0]] });
     await handler({ args, auth: validAuthBase });
 
     expect(axios.get).toHaveBeenCalledWith(
       `${mockBaseUrl}/wp-json/wp/v2/posts`,
-      expect.objectContaining({ 
+      expect.objectContaining({
           params: { categories: '10,15' },
-          headers: { 'Content-Type': 'application/json' } 
+          headers: { 'Content-Type': 'application/json' }
       })
     );
   });
@@ -87,10 +87,10 @@ describe('WordPress getPosts Handler', () => {
 
     expect(axios.get).toHaveBeenCalledWith(
       `${mockBaseUrl}/wp-json/wp/v2/posts`,
-      expect.objectContaining({ 
-          params: { tags: '20', search: 'World' }, 
-          headers: { 'Content-Type': 'application/json' } 
-      }) 
+      expect.objectContaining({
+          params: { tags: '20', search: 'World' },
+          headers: { 'Content-Type': 'application/json' }
+      })
     );
   });
 
@@ -102,7 +102,7 @@ describe('WordPress getPosts Handler', () => {
 
     await expect(handler({ args: {}, auth: authWithToken })).rejects.toThrow('WordPress API Authorization Error: Forbidden for posts.');
   });
-  
+
   it('should throw specific error for 401 if no token was provided (suggests auth needed)', async () => {
     const apiError = new Error('Auth Error no token');
     apiError.response = { status: 401, data: { message: 'Posts require auth.' } };
@@ -135,23 +135,23 @@ describe('WordPress getPosts Handler', () => {
       axios.get.mockResolvedValue({ data: mockPostListResponse });
       await expect(handler({ args: {}, auth: validAuthBase })).resolves.toEqual(mockPostListResponse);
     });
-    
+
     it('should throw Zod error for invalid categories format (not number or csv string)', async () => {
       const customRegexMessage = "Categories must be a positive integer or a comma-separated string of positive integers.";
-      await expectZodError({ categories: 'abc' }, validAuthBase, customRegexMessage); 
+      await expectZodError({ categories: 'abc' }, validAuthBase, customRegexMessage);
       await expectZodError({ categories: '10,abc' }, validAuthBase, customRegexMessage);
     });
-    
+
     it('should throw Zod error for invalid tags format', async () => {
       const customRegexMessage = "Tags must be a positive integer or a comma-separated string of positive integers.";
       await expectZodError({ tags: 'xyz' }, validAuthBase, customRegexMessage);
     });
-    
+
     it('should accept valid categories (single number)', async () => {
         axios.get.mockResolvedValue({ data: [] });
         await expect(handler({ args: {categories: 1}, auth: validAuthBase })).resolves.not.toThrow();
     });
-    
+
     it('should accept valid tags (comma-separated string)', async () => {
         axios.get.mockResolvedValue({ data: [] });
         await expect(handler({ args: {tags: "1,2"}, auth: validAuthBase })).resolves.not.toThrow();

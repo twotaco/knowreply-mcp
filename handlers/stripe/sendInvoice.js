@@ -15,7 +15,7 @@ async function sendInvoiceInternal({ invoiceId, apiKey }) {
   try {
     // The send invoice endpoint is a POST request, but it doesn't typically require a body.
     // The action is identified by the URL itself.
-    const response = await axios.post(`https://api.stripe.com/v1/invoices/${invoiceId}/send`, 
+    const response = await axios.post(`https://api.stripe.com/v1/invoices/${invoiceId}/send`,
       null, // No request body needed for this Stripe POST endpoint
       {
         headers: {

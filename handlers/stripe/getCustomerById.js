@@ -5,7 +5,7 @@ const axios = require('axios');
 const ArgsSchema = z.object({
   customerId: z.string().min(1, { message: "Stripe Customer ID is required." })
   // Common expansions for customer: 'subscriptions', 'sources', 'default_source', 'tax_ids'
-  // expand: z.array(z.string()).optional().describe("Objects to expand in the response, e.g., ['subscriptions']"), 
+  // expand: z.array(z.string()).optional().describe("Objects to expand in the response, e.g., ['subscriptions']"),
 });
 
 // Zod Schema for authentication object
@@ -28,7 +28,7 @@ async function getCustomerByIdInternal({ customerId, apiKey /*, expand*/ }) {
     });
 
     // Return the full customer object as Stripe returns it, or select fields if preferred
-    return response.data; 
+    return response.data;
   } catch (error) {
     console.error(`Error calling Stripe API (getCustomerById for ${customerId}):`, error.message);
     let errorMessage = `An unexpected error occurred while trying to retrieve customer ${customerId} from Stripe.`;

@@ -6,7 +6,7 @@ const ArgsSchema = z.object({
   search: z.string().optional().describe("Limit results to those matching a search term."),
   categories: z.union([
     z.number().int().positive(),
-    z.string().regex(/^\d+(,\d+)*$/, { message: "Categories must be a positive integer or a comma-separated string of positive integers." }) 
+    z.string().regex(/^\d+(,\d+)*$/, { message: "Categories must be a positive integer or a comma-separated string of positive integers." })
   ]).optional().describe("Limit result set to posts assigned to specific category IDs (comma-separated string or single number)."),
   tags: z.union([
     z.number().int().positive(),
@@ -55,7 +55,7 @@ async function getPostsInternal({ baseUrl, token, search, categories, tags /*, c
       } else {
         errorMessage = `WordPress API Error: Status code ${error.response.status}`;
       }
-      
+
       if ((error.response.status === 401 || error.response.status === 403) && token) {
         errorMessage = `WordPress API Authorization Error: ${error.response.data?.message || 'Check your token and permissions for posts.'}`;
       } else if (error.response.status === 401 && !token) { // If no token was provided and got 401

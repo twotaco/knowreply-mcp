@@ -37,14 +37,14 @@ describe('WordPress getPages Handler', () => {
     const authWithToken = { ...validAuthBase, token: mockToken };
     const filteredResponse = [mockPageListResponse[0]];
     axios.get.mockResolvedValue({ data: filteredResponse });
-    
+
     await handler({ args, auth: authWithToken });
 
     expect(axios.get).toHaveBeenCalledWith(
       `${mockBaseUrl}/wp-json/wp/v2/pages`,
-      expect.objectContaining({ 
+      expect.objectContaining({
         params: { search: 'About' },
-        headers: expect.objectContaining({ 
+        headers: expect.objectContaining({
             'Authorization': `Bearer ${mockToken}`,
             'Content-Type': 'application/json',
         })
@@ -59,7 +59,7 @@ describe('WordPress getPages Handler', () => {
 
     expect(axios.get).toHaveBeenCalledWith(
       `${mockBaseUrl}/wp-json/wp/v2/pages`,
-      expect.objectContaining({ 
+      expect.objectContaining({
         params: { slug: 'contact' },
         headers: { 'Content-Type': 'application/json' } // No auth
       })
@@ -74,7 +74,7 @@ describe('WordPress getPages Handler', () => {
 
     await expect(handler({ args: {}, auth: authWithToken })).rejects.toThrow('WordPress API Authorization Error: Forbidden with token.');
   });
-  
+
   it('should throw specific error for 401 if no token was provided (suggests auth needed)', async () => {
     const apiError = new Error('Auth Error no token');
     apiError.response = { status: 401, data: { message: 'Resource requires auth.' } };
@@ -94,9 +94,9 @@ describe('WordPress getPages Handler', () => {
 
   it('should throw an error if no response received from WordPress API', async () => {
     const networkError = new Error('Network issue');
-    networkError.request = {}; 
+    networkError.request = {};
     axios.get.mockRejectedValue(networkError);
-    
+
     await expect(handler({ args: {}, auth: validAuthBase }))
       .rejects.toThrow('No response received from WordPress API when fetching pages. Check network connectivity.');
   });
@@ -117,25 +117,25 @@ describe('WordPress getPages Handler', () => {
       axios.get.mockResolvedValue({ data: mockPageListResponse });
       await expect(handler({ args: {}, auth: validAuthBase })).resolves.toEqual(mockPageListResponse);
     });
-    
+
     it('should throw Zod error if baseUrl is missing in auth', async () => {
-      await expectZodError({}, { token: mockToken }, "Required"); 
+      await expectZodError({}, { token: mockToken }, "Required");
     });
-        
+
     it('should throw Zod error if baseUrl is invalid in auth', async () => {
       await expectZodError({}, { baseUrl: 'invalid-url', token: mockToken }, "WordPress base URL is required.");
     });
 
     it('should NOT throw Zod error if token is missing in auth (token is optional)', async () => {
-      axios.get.mockResolvedValue({ data: mockPageListResponse }); 
+      axios.get.mockResolvedValue({ data: mockPageListResponse });
       await expect(handler({ args: {}, auth: { baseUrl: mockBaseUrl } })).resolves.toEqual(mockPageListResponse);
     });
-    
+
     it('should accept empty string token (Zod pass) and not send Authorization header', async () => {
       // Zod schema for token is .string().optional(). It allows an empty string if provided.
       // The handler logic should then treat the empty (falsy) token as if no token was provided.
       const authWithEmptyToken = { ...validAuthBase, token: "" };
-      axios.get.mockResolvedValue({ data: mockPageListResponse }); 
+      axios.get.mockResolvedValue({ data: mockPageListResponse });
       await expect(handler({ args: {}, auth: authWithEmptyToken })).resolves.toEqual(mockPageListResponse);
        expect(axios.get).toHaveBeenCalledWith(
         expect.any(String),

@@ -26,7 +26,7 @@ describe('WordPress getUsers Handler', () => {
       `${mockBaseUrl}/wp-json/wp/v2/users`,
       {
         params: {},
-        headers: { 
+        headers: {
           'Authorization': `Bearer ${mockToken}`,
           'Content-Type': 'application/json',
         },
@@ -43,9 +43,9 @@ describe('WordPress getUsers Handler', () => {
 
     expect(axios.get).toHaveBeenCalledWith(
       `${mockBaseUrl}/wp-json/wp/v2/users`,
-      expect.objectContaining({ 
+      expect.objectContaining({
         params: { search: 'user@example.com' },
-        headers: { 
+        headers: {
           'Authorization': `Bearer ${mockToken}`,
           'Content-Type': 'application/json',
         },
@@ -55,30 +55,30 @@ describe('WordPress getUsers Handler', () => {
 
   it('should fetch users with a general search term', async () => {
     const args = { search: 'SpecificUser' };
-    axios.get.mockResolvedValue({ data: [mockUserListResponse[0]] }); 
+    axios.get.mockResolvedValue({ data: [mockUserListResponse[0]] });
     await handler({ args, auth: validAuth });
 
     expect(axios.get).toHaveBeenCalledWith(
       `${mockBaseUrl}/wp-json/wp/v2/users`,
-      expect.objectContaining({ 
+      expect.objectContaining({
         params: { search: 'SpecificUser' },
-        headers: { 
+        headers: {
           'Authorization': `Bearer ${mockToken}`,
           'Content-Type': 'application/json',
         },
       })
     );
   });
-  
+
   it('should prioritize email for search if both email and search are provided', async () => {
-    const args = { email: 'onlyemail@example.com', search: 'this_is_ignored' }; 
+    const args = { email: 'onlyemail@example.com', search: 'this_is_ignored' };
     axios.get.mockResolvedValue({ data: [] });
     await handler({ args, auth: validAuth });
     expect(axios.get).toHaveBeenCalledWith(
       `${mockBaseUrl}/wp-json/wp/v2/users`,
-      expect.objectContaining({ 
-        params: { search: 'onlyemail@example.com' }, 
-        headers: { 
+      expect.objectContaining({
+        params: { search: 'onlyemail@example.com' },
+        headers: {
           'Authorization': `Bearer ${mockToken}`,
           'Content-Type': 'application/json',
         },
@@ -97,7 +97,7 @@ describe('WordPress getUsers Handler', () => {
 
   it('should throw an error if WordPress API call fails with other errors', async () => {
     const apiError = new Error('WP API Error');
-    apiError.response = { data: { message: 'Some other WP error.' } }; 
+    apiError.response = { data: { message: 'Some other WP error.' } };
     axios.get.mockRejectedValue(apiError);
 
     await expect(handler({ args: {}, auth: validAuth })).rejects.toThrow('WordPress API Error: Some other WP error.');
@@ -105,9 +105,9 @@ describe('WordPress getUsers Handler', () => {
 
   it('should throw an error if no response received from WordPress API', async () => {
     const networkError = new Error('Network issue');
-    networkError.request = {}; 
+    networkError.request = {};
     axios.get.mockRejectedValue(networkError);
-    
+
     await expect(handler({ args: {}, auth: validAuth }))
       .rejects.toThrow('No response received from WordPress API when fetching users. Check network connectivity.');
   });
@@ -132,11 +132,11 @@ describe('WordPress getUsers Handler', () => {
     it('should throw Zod error for invalid email format in args', async () => {
       await expectZodError({ email: 'not-an-email' }, validAuth, "Invalid email format.");
     });
-    
+
     it('should throw Zod error if baseUrl is missing in auth', async () => {
       await expectZodError({}, { token: mockToken }, "Required");
     });
-        
+
     it('should throw Zod error if baseUrl is invalid in auth', async () => {
       // The custom message for .url() in AuthSchema is "WordPress base URL is required."
       await expectZodError({}, { baseUrl: 'invalid-url', token: mockToken }, "WordPress base URL is required.");
@@ -145,7 +145,7 @@ describe('WordPress getUsers Handler', () => {
     it('should throw Zod error if token is missing in auth', async () => {
       await expectZodError({}, { baseUrl: mockBaseUrl }, "Required");
     });
-    
+
     it('should throw Zod error if token is an empty string in auth', async () => {
       await expectZodError({}, { baseUrl: mockBaseUrl, token: "" }, "WordPress authentication token (e.g., Application Password) is required.");
     });
