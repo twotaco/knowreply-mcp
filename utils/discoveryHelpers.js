@@ -12,46 +12,114 @@ function toTitleCase(str) {
 }
 
 function getZodSchemaDetails(zodSchema) {
-  const details = {};
-  if (zodSchema && typeof zodSchema.shape === 'object' && zodSchema.shape !== null) {
-    for (const key in zodSchema.shape) {
-      const field = zodSchema.shape[key];
-      if (field && field._def && field._def.typeName) {
-        let typeName = field._def.typeName;
-        // For optional types, it's often ZodOptional { _def: { innerType: ZodString ... } }
-        if (typeName === 'ZodOptional' && field._def.innerType && field._def.innerType._def) {
-          typeName = `ZodOptional<${field._def.innerType._def.typeName}>`;
-        }
-        // For enums, list the values: ZodEnum { _def: { values: [...] } }
-        if (typeName === 'ZodEnum' && field._def.values) {
-          typeName = `ZodEnum<[${field._def.values.join(', ')}]>`;
-        }
-        // For objects, we might want to indicate it's an object but not recurse deeply for this basic version
-        if (typeName === 'ZodObject') {
-            // Could potentially call getZodSchemaDetails recursively if we want nested structure later
-            // For now, just mark as object.
-            // To get sub-keys: Object.keys(field._def.shape())
-            typeName = 'ZodObject';
-        }
-         if (typeName === 'ZodEffects') { // Handle .passthrough() or other effects
-            if (field._def.schema && field._def.schema._def && field._def.schema._def.typeName) {
-                let innerEffectTypeName = field._def.schema._def.typeName;
-                 if (innerEffectTypeName === 'ZodObject') {
-                     typeName = 'ZodObject'; // Keep it simple for passthrough objects
-                 } else {
-                    typeName = `ZodEffects<${innerEffectTypeName}>`;
-                 }
-            } else {
-                typeName = 'ZodEffects';
-            }
-        }
-        details[key] = typeName;
-      } else {
-        details[key] = 'UnknownZodType';
+  if (!zodSchema || !zodSchema._def || !zodSchema._def.typeName) {
+    // This case might occur if a schema is undefined or not a Zod schema.
+    // For example, if an OutputSchema is accidentally exported as null.
+    return { type: 'InvalidOrUndefinedSchema' };
+  }
+
+  const typeName = zodSchema._def.typeName;
+
+  switch (typeName) {
+    case 'ZodObject':
+      const shapeDetails = {};
+      if (zodSchema.shape) { // Ensure shape exists
+          for (const key in zodSchema.shape) {
+            shapeDetails[key] = getZodSchemaDetails(zodSchema.shape[key]);
+          }
       }
+      // Add description if available on the object schema itself
+      const description = zodSchema._def.description;
+      return { type: 'ZodObject', shape: shapeDetails, ...(description && { description }) };
+    case 'ZodString':
+    case 'ZodNumber':
+    case 'ZodBoolean':
+    case 'ZodDate':
+    case 'ZodAny':
+    case 'ZodUnknown':
+    case 'ZodVoid':
+    case 'ZodNull':
+    case 'ZodUndefined':
+    case 'ZodBigInt': {
+      const desc = zodSchema._def.description;
+      // We could also extract checks like min/max for strings/numbers if needed later
+      return { type: typeName, ...(desc && { description: desc }) };
+    }
+    case 'ZodLiteral': {
+      const desc = zodSchema._def.description;
+      return { type: 'ZodLiteral', value: zodSchema._def.value, ...(desc && { description: desc }) };
+    }
+    case 'ZodEnum': {
+      const desc = zodSchema._def.description;
+      return { type: 'ZodEnum', values: zodSchema._def.values, ...(desc && { description: desc }) };
+    }
+    case 'ZodNativeEnum': {
+      const desc = zodSchema._def.description;
+      // Attempt to get values; this might vary based on how the native enum is defined
+      const values = zodSchema._def.values ? Object.values(zodSchema._def.values) : "Unknown native enum values";
+      return { type: 'ZodNativeEnum', values: values, ...(desc && { description: desc }) };
+    }
+    case 'ZodOptional':
+    case 'ZodNullable': {
+      const desc = zodSchema._def.description; // Description might be on the wrapper or inner type
+      return {
+        type: typeName,
+        inner: getZodSchemaDetails(zodSchema._def.innerType),
+        ...(desc && { description: desc })
+      };
+    }
+    case 'ZodArray': {
+      const desc = zodSchema._def.description;
+      return {
+        type: 'ZodArray',
+        element: getZodSchemaDetails(zodSchema._def.type), // .type for ZodArray element schema
+        ...(desc && { description: desc })
+      };
+    }
+    case 'ZodUnion':
+    case 'ZodDiscriminatedUnion': { // ZodDiscriminatedUnion might need more specific handling for its discriminator
+      const desc = zodSchema._def.description;
+      return {
+        type: typeName,
+        options: zodSchema._def.options.map(opt => getZodSchemaDetails(opt)),
+        ...(desc && { description: desc })
+      };
+    }
+    case 'ZodRecord': {
+      const desc = zodSchema._def.description;
+      return {
+        type: 'ZodRecord',
+        key: getZodSchemaDetails(zodSchema._def.keyType),
+        value: getZodSchemaDetails(zodSchema._def.valueType),
+        ...(desc && { description: desc })
+      };
+    }
+    case 'ZodEffects': { // Handles .passthrough(), .refine(), .transform() etc.
+      const desc = zodSchema._def.description;
+      // The actual effect type (e.g., 'refinement', 'transform', 'preprocess') might be useful
+      // let effectType = zodSchema._def.effect ? zodSchema._def.effect.type : 'unknown';
+      return {
+        type: 'ZodEffects',
+        // effect: effectType,
+        schema: getZodSchemaDetails(zodSchema._def.schema),
+        ...(desc && { description: desc })
+      };
+    }
+    case 'ZodDefault': { // Handle schemas with .default()
+        const desc = zodSchema._def.description;
+        return {
+            type: 'ZodDefault',
+            inner: getZodSchemaDetails(zodSchema._def.innerType),
+            defaultValue: zodSchema._def.defaultValue(), // Execute to get default value
+            ...(desc && { description: desc })
+        };
+    }
+    // Add cases for other Zod types as encountered/needed e.g. ZodTuple, ZodIntersection, ZodLazy, etc.
+    default: {
+      const desc = zodSchema._def.description;
+      return { type: typeName, message: 'Unhandled Zod type in getZodSchemaDetails', ...(desc && { description: desc }) };
     }
   }
-  return details;
 }
 
 function generateSamplePayload(schemaDetails) {
