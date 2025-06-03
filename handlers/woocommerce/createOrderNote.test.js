@@ -1,5 +1,5 @@
 // handlers/woocommerce/createOrderNote.test.js
-const { handler, ArgsSchema } = require('./createOrderNote');
+const { handler, ArgsSchema, ConnectionSchema } = require('./createOrderNote'); // Import ConnectionSchema
 const axios = require('axios');
 
 jest.mock('axios');
@@ -15,24 +15,26 @@ describe('WooCommerce createOrderNote Handler', () => {
     axios.post.mockReset();
   });
 
-  const validArgs = {
+  const validAuth = {
     baseUrl: mockBaseUrl,
     consumerKey: mockConsumerKey,
-    consumerSecret: mockConsumerSecret,
+    consumerSecret: mockConsumerSecret
+  };
+  const validBaseArgs = {
     orderId: mockOrderId,
-    note: mockNoteContent,
+    note: mockNoteContent
   };
 
   it('should create an order note successfully', async () => {
     const mockResponseNote = { id: 1, note: mockNoteContent, customer_note: false, date_created: new Date().toISOString() };
     axios.post.mockResolvedValue({ data: mockResponseNote });
 
-    const result = await handler({ args: validArgs });
+    const result = await handler({ args: validBaseArgs, auth: validAuth });
 
     expect(axios.post).toHaveBeenCalledWith(
       `${mockBaseUrl}/wp-json/wc/v3/orders/${mockOrderId}/notes`,
-      { note: mockNoteContent }, // Payload
-      { // Config with headers
+      { note: mockNoteContent },
+      {
         headers: {
           'Authorization': `Basic ${Buffer.from(`${mockConsumerKey}:${mockConsumerSecret}`).toString('base64')}`,
           'Content-Type': 'application/json',
@@ -44,15 +46,20 @@ describe('WooCommerce createOrderNote Handler', () => {
 
   it('should accept string orderId', async () => {
     const stringOrderId = "order_abc123";
-    const argsWithStringOrderId = { ...validArgs, orderId: stringOrderId };
+    const argsWithStringOrderId = { ...validBaseArgs, orderId: stringOrderId };
     const mockResponseNote = { id: 1, note: mockNoteContent, customer_note: false };
     axios.post.mockResolvedValue({ data: mockResponseNote });
 
-    await handler({ args: argsWithStringOrderId });
+    await handler({ args: argsWithStringOrderId, auth: validAuth });
     expect(axios.post).toHaveBeenCalledWith(
       `${mockBaseUrl}/wp-json/wc/v3/orders/${stringOrderId}/notes`,
-      expect.any(Object), // payload
-      expect.any(Object)  // config with headers
+      expect.objectContaining({ note: mockNoteContent }),
+      expect.objectContaining({
+         headers: {
+          'Authorization': `Basic ${Buffer.from(`${mockConsumerKey}:${mockConsumerSecret}`).toString('base64')}`,
+          'Content-Type': 'application/json',
+        },
+      })
     );
   });
 
@@ -64,7 +71,7 @@ describe('WooCommerce createOrderNote Handler', () => {
     };
     axios.post.mockRejectedValue(apiError);
 
-    await expect(handler({ args: validArgs })).rejects.toThrow(`Order ${mockOrderId} not found when trying to add note: Invalid ID.`);
+    await expect(handler({ args: validBaseArgs, auth: validAuth })).rejects.toThrow(`Order ${mockOrderId} not found when trying to add note: Invalid ID.`);
   });
 
   it('should handle other API errors from WooCommerce', async () => {
@@ -72,64 +79,79 @@ describe('WooCommerce createOrderNote Handler', () => {
     apiError.response = { status: 400, data: { message: 'Invalid data provided.' } };
     axios.post.mockRejectedValue(apiError);
 
-    await expect(handler({ args: validArgs })).rejects.toThrow('Invalid data provided.');
+    await expect(handler({ args: validBaseArgs, auth: validAuth })).rejects.toThrow('Invalid data provided.');
   });
 
   it('should handle generic network errors', async () => {
     const networkError = new Error('Network connection failed');
     axios.post.mockRejectedValue(networkError);
 
-    await expect(handler({ args: validArgs })).rejects.toThrow('Network connection failed');
+    await expect(handler({ args: validBaseArgs, auth: validAuth })).rejects.toThrow('Network connection failed');
   });
 
-  const expectZodError = async (args, expectedMessagePart) => {
+  const expectZodError = async (args, auth, expectedMessagePart, isExact = false) => {
       try {
-          await handler({ args });
+          await handler({ args, auth });
           throw new Error('Handler did not throw an error as expected.');
       } catch (error) {
           expect(error.name).toBe('ZodError');
-          const hasMatchingError = error.errors.some(err => err.message.includes(expectedMessagePart));
-          expect(hasMatchingError).toBe(true);
+          const foundError = error.errors.find(e => isExact ? e.message === expectedMessagePart : e.message.includes(expectedMessagePart));
+          expect(foundError).toBeDefined();
       }
   };
 
-  describe('ArgsSchema Validation', () => {
-    ['baseUrl', 'consumerKey', 'consumerSecret', 'orderId', 'note'].forEach(field => {
-      it(`should throw Zod validation error if ${field} is missing`, async () => {
-        const incompleteArgs = { ...validArgs };
-        delete incompleteArgs[field];
-
-        let expectedMessage = "Required";
-        // For union types like orderId, Zod might throw "Invalid input" if the field is missing,
-        // as 'undefined' doesn't match any part of the union.
-        if (field === 'orderId') {
-            expectedMessage = "Invalid input";
-        }
-
-        await expectZodError(incompleteArgs, expectedMessage);
-      });
+  describe('Schema Validation', () => {
+    it('should throw Zod error if baseUrl is missing from auth', async () => {
+      const invalidAuth = { consumerKey: mockConsumerKey, consumerSecret: mockConsumerSecret };
+      await expectZodError(validBaseArgs, invalidAuth, "Required", true);
     });
 
-    it('should throw Zod validation error if baseUrl is invalid', async () => {
-      await expectZodError({ ...validArgs, baseUrl: 'not-a-url' }, "Invalid WooCommerce base URL");
+    it('should throw Zod error if baseUrl is invalid in auth', async () => {
+      const invalidAuth = { ...validAuth, baseUrl: 'not-a-url' };
+      await expectZodError(validBaseArgs, invalidAuth, "WooCommerce base URL is required.");
     });
 
-    ['consumerKey', 'consumerSecret', 'note'].forEach(field => {
-         it(`should throw Zod validation error if ${field} is an empty string`, async () => {
-            let expectedMessage = "";
-            if (field === 'consumerKey') expectedMessage = "WooCommerce Consumer Key is required";
-            else if (field === 'consumerSecret') expectedMessage = "WooCommerce Consumer Secret is required";
-            else if (field === 'note') expectedMessage = "Note content cannot be empty";
-            await expectZodError({ ...validArgs, [field]: "" }, expectedMessage);
-        });
+    it('should throw Zod error if consumerKey is missing from auth', async () => {
+      const invalidAuth = { baseUrl: mockBaseUrl, consumerSecret: mockConsumerSecret };
+      await expectZodError(validBaseArgs, invalidAuth, "Required", true);
     });
 
-    it('should throw Zod validation error if orderId is 0', async () => {
-      await expectZodError({ ...validArgs, orderId: 0 }, "Order ID must be a positive integer");
+    it('should throw Zod error if consumerKey is an empty string in auth', async () => {
+      const invalidAuth = { ...validAuth, consumerKey: "" };
+      await expectZodError(validBaseArgs, invalidAuth, "WooCommerce Consumer Key is required.", true);
     });
 
-    it('should throw Zod validation error if orderId is an empty string', async () => {
-      await expectZodError({ ...validArgs, orderId: "" }, "Order ID cannot be empty if a string");
+    it('should throw Zod error if consumerSecret is missing from auth', async () => {
+      const invalidAuth = { baseUrl: mockBaseUrl, consumerKey: mockConsumerKey };
+      await expectZodError(validBaseArgs, invalidAuth, "Required", true);
+    });
+
+    it('should throw Zod error if consumerSecret is an empty string in auth', async () => {
+      const invalidAuth = { ...validAuth, consumerSecret: "" };
+      await expectZodError(validBaseArgs, invalidAuth, "WooCommerce Consumer Secret is required.", true);
+    });
+
+    it('should throw Zod error if orderId is missing from args', async () => {
+      const {orderId, ...incompleteArgs} = validBaseArgs;
+      // For a missing field that is a union, Zod often defaults to "Invalid input"
+      await expectZodError(incompleteArgs, validAuth, "Invalid input", false);
+    });
+
+    it('should throw Zod error if note is missing from args', async () => {
+      const {note, ...incompleteArgs} = validBaseArgs;
+      await expectZodError(incompleteArgs, validAuth, "Required", true);
+    });
+
+    it('should throw Zod error if note is an empty string in args', async () => {
+      await expectZodError({ ...validBaseArgs, note: "" }, validAuth, "Note content cannot be empty", true);
+    });
+
+    it('should throw Zod error if orderId is 0 in args', async () => {
+      await expectZodError({ ...validBaseArgs, orderId: 0 }, validAuth, "Order ID must be a positive integer");
+    });
+
+    it('should throw Zod error if orderId is an empty string in args', async () => {
+      await expectZodError({ ...validBaseArgs, orderId: "" }, validAuth, "Order ID cannot be empty if a string");
     });
   });
 });

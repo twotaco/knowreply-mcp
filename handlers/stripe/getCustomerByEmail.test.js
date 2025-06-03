@@ -1,5 +1,5 @@
 // handlers/stripe/getCustomerByEmail.test.js
-const { handler, ArgsSchema, AuthSchema } = require('./getCustomerByEmail');
+const { handler, ArgsSchema, ConnectionSchema } = require('./getCustomerByEmail'); // Updated to import ConnectionSchema
 const axios = require('axios');
 
 jest.mock('axios');
@@ -12,7 +12,7 @@ describe('Stripe getCustomerByEmail Handler', () => {
   });
 
   const validArgs = { email: 'test@example.com' };
-  const validAuth = { token: mockApiKey };
+  const validAuth = { token: mockApiKey }; // This structure is compatible with the new ConnectionSchema
 
   it('should fetch a customer by email successfully', async () => {
     const stripeCustomer = {
@@ -20,7 +20,7 @@ describe('Stripe getCustomerByEmail Handler', () => {
       name: 'Test User',
       email: 'test@example.com',
       phone: null,
-      created: 1678886400, // Example timestamp
+      created: 1678886400,
       currency: 'usd',
       livemode: false,
       metadata: {},
@@ -65,7 +65,7 @@ describe('Stripe getCustomerByEmail Handler', () => {
 
   it('should throw an error if Stripe API returns non-2xx without specific error message in data.error.message', async () => {
     const apiError = new Error('Request failed with status code 500');
-    apiError.response = { status: 500, statusText: 'Internal Server Error', data: {} }; // No error.message in data.error
+    apiError.response = { status: 500, statusText: 'Internal Server Error', data: {} };
     axios.get.mockRejectedValue(apiError);
 
     await expect(handler({ args: validArgs, auth: validAuth })).rejects.toThrow('Stripe API Error: Internal Server Error');
@@ -74,28 +74,26 @@ describe('Stripe getCustomerByEmail Handler', () => {
 
   it('should throw an error if no response received from Stripe API', async () => {
     const networkError = new Error('Network timeout');
-    networkError.request = {}; // Indicates a request was made but no response
+    networkError.request = {};
     axios.get.mockRejectedValue(networkError);
 
     await expect(handler({ args: validArgs, auth: validAuth })).rejects.toThrow('No response received from Stripe API. Check network connectivity.');
   });
 
-  // Helper for Zod validation error checks
-  const expectZodError = async (args, auth, expectedMessagePart) => {
+  const expectZodError = async (args, auth, expectedMessagePart, isExact = false) => { // Added isExact flag for flexibility
       try {
           await handler({ args, auth });
           throw new Error('Handler did not throw an error as expected.');
       } catch (error) {
           expect(error.name).toBe('ZodError');
-          const hasMatchingError = error.errors.some(err => err.message.includes(expectedMessagePart));
-          expect(hasMatchingError).toBe(true);
+          const foundError = error.errors.find(e => isExact ? e.message === expectedMessagePart : e.message.includes(expectedMessagePart));
+          expect(foundError).toBeDefined();
       }
   };
 
-  describe('ArgsSchema and AuthSchema Validation', () => {
+  describe('ArgsSchema and ConnectionSchema Validation', () => { // Updated describe block name for clarity
     it('should throw Zod error if email is missing in args', async () => {
-      // ArgsSchema expects 'email'. If args is {}, email is missing.
-      await expectZodError({}, validAuth, "Required");
+      await expectZodError({}, validAuth, "Required", true);
     });
 
     it('should throw Zod error if email is invalid in args', async () => {
@@ -103,12 +101,10 @@ describe('Stripe getCustomerByEmail Handler', () => {
     });
 
     it('should throw Zod error if token is missing in auth', async () => {
-      // AuthSchema expects 'token'. If auth is {}, token is missing.
-      await expectZodError(validArgs, {}, "Required");
+      await expectZodError(validArgs, {}, "Required", true);
     });
 
     it('should throw Zod error if token is an empty string in auth', async () => {
-      // AuthSchema has .min(1) for token.
       await expectZodError(validArgs, { token: "" }, "Stripe API key (secret key) is required.");
     });
   });

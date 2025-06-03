@@ -9,8 +9,8 @@ const ArgsSchema = z.object({
   // expand: z.array(z.string()).optional().describe("Objects to expand."),
 });
 
-// Zod Schema for authentication object
-const AuthSchema = z.object({
+// Zod Schema for Stripe connection/authentication object
+const ConnectionSchema = z.object({
   token: z.string().min(1, { message: "Stripe API key (secret key) is required." })
 });
 
@@ -32,21 +32,19 @@ async function getPaymentIntentByIdInternal({ paymentIntentId, apiKey /*, expand
     console.error(`Error calling Stripe API (getPaymentIntentById for ${paymentIntentId}):`, error.message);
     let errorMessage = `An unexpected error occurred while trying to retrieve Payment Intent ${paymentIntentId} from Stripe.`;
     if (error.response) {
-      // Prioritize Stripe's error message if available
       if (error.response.data && error.response.data.error && error.response.data.error.message) {
         errorMessage = `Stripe API Error: ${error.response.data.error.message}`;
-      } else if (error.response.statusText) { // Fallback to statusText if no specific message
+      } else if (error.response.statusText) {
         errorMessage = `Stripe API Error: ${error.response.statusText}`;
       } else {
         errorMessage = `Stripe API Error: Status code ${error.response.status}`;
       }
-      // Specific message for 404
       if (error.response.status === 404) {
         errorMessage = `Stripe Payment Intent with ID '${paymentIntentId}' not found.`;
       }
     } else if (error.request) {
       errorMessage = `No response received from Stripe API when fetching Payment Intent ${paymentIntentId}. Check network connectivity.`;
-    } else if (error.message) { // Non-HTTP errors or setup issues with axios
+    } else if (error.message) {
         errorMessage = error.message;
     }
     throw new Error(errorMessage);
@@ -56,7 +54,7 @@ async function getPaymentIntentByIdInternal({ paymentIntentId, apiKey /*, expand
 // Main handler function called by server.js
 async function handler({ args, auth }) {
   const parsedArgs = ArgsSchema.parse(args);
-  const parsedAuth = AuthSchema.parse(auth);
+  const parsedAuth = ConnectionSchema.parse(auth); // Use ConnectionSchema here
 
   return getPaymentIntentByIdInternal({
     paymentIntentId: parsedArgs.paymentIntentId,
@@ -68,7 +66,7 @@ async function handler({ args, auth }) {
 module.exports = {
   handler,
   ArgsSchema,
-  AuthSchema,
+  ConnectionSchema, // Export ConnectionSchema instead of AuthSchema
   meta: {
     description: "Fetches a PaymentIntent object from Stripe by its ID.",
     parameters: ArgsSchema.shape,
