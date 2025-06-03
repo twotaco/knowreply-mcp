@@ -19,6 +19,41 @@ const ConnectionSchema = z.object({
   token: z.string().min(1, { message: "WordPress authentication token (e.g., Application Password) is required." })
 });
 
+// --- Output Schemas ---
+
+// Zod Schema for an individual WordPress User
+const WordPressUserSchema = z.object({
+  id: z.number().int(),
+  username: z.string().describe("Login username for the user."),
+  name: z.string().describe("Display name for the user."),
+  first_name: z.string().optional().describe("First name of the user."),
+  last_name: z.string().optional().describe("Last name of the user."),
+  email: z.string().email().optional().describe("The email address for the user (only visible with appropriate permissions)."),
+  url: z.string().url().optional().describe("URL of the user's website."),
+  description: z.string().optional().describe("Biographical info for the user."),
+  link: z.string().url().describe("URL to the user's author archive."),
+  locale: z.string().optional().describe("Locale for the user, e.g., 'en_US'."),
+  nickname: z.string().optional().describe("The user's nickname."),
+  slug: z.string().describe("An alphanumeric identifier for the user."),
+  registered_date: z.string().datetime({ message: "Invalid ISO date format for registered_date" }).optional()
+                      .describe("Registration date for the user (usually requires 'edit' context)."),
+  roles: z.array(z.string()).optional().describe("Roles assigned to the user."),
+  password: z.string().optional().describe("User password (only available with 'edit' context and specific permissions, generally not returned)."),
+  capabilities: z.record(z.string(), z.boolean()).optional().describe("All capabilities of the user."),
+  extra_capabilities: z.record(z.string(), z.boolean()).optional().describe("Any extra capabilities attributed to the user (e.g., 'administrator', 'editor')."),
+  avatar_urls: z.record(z.string(), z.string().url())
+                  .optional().describe("URLs for user avatars of different sizes (keys are pixel sizes like '24', '48', '96')."),
+  meta: z.record(z.string(), z.any()).optional().describe("Meta fields associated with the user. Structure can vary."),
+  // Common ACF (Advanced Custom Fields) structure, if present
+  // acf: z.record(z.string(), z.any()).optional(),
+  _links: z.record(z.string(), z.array(z.object({ href: z.string().url() }).merge(z.any()))).optional().describe("WordPress REST API links object."),
+}).passthrough(); // Allow other fields WordPress or plugins might add
+
+// The OutputSchema for the handler is an array of User objects.
+// It's not nullable because an error is thrown on failure, and an empty array is a valid success response.
+const OutputSchema = z.array(WordPressUserSchema);
+// --- End of Output Schemas ---
+
 async function getUsersInternal({ baseUrl, token, email, search /*, roles, slug, context*/ }) {
   const params = {
     // context: context,
@@ -85,7 +120,8 @@ async function handler({ args, auth }) {
 module.exports = {
   handler,
   ArgsSchema,
-  ConnectionSchema, // Export ConnectionSchema instead of AuthSchema
+  ConnectionSchema,
+  OutputSchema, // Export the OutputSchema
   meta: {
     description: "Fetches users from WordPress. Supports searching by email (via general search) or a search term. Requires authentication.",
     parameters: ArgsSchema.shape,
