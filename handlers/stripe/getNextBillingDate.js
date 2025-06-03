@@ -1,116 +1,85 @@
-const z = require('zod');
-const axios = require('axios'); // Import axios
+const { z } = require('zod');
+const axios = require('axios');
 
-// Zod Schemas for validation (remain the same)
+// Zod Schema for arguments
 const ArgsSchema = z.object({
   customerId: z.string().min(1, { message: "Customer ID cannot be empty." })
 });
 
-const AuthSchema = z.object({
-  token: z.string().min(1, { message: "Stripe API key (secret key) cannot be empty." })
+// Zod Schema for connection object
+const ConnectionSchema = z.object({
+  token: z.string().min(1, { message: "Stripe API key (secret key) is required." })
 });
 
-// The _mockStripeApi_getNextBillingDate function is removed or commented out.
-
-async function handleGetNextBillingDate({ args, auth }) {
-  console.log('Executing MCP: stripe.getNextBillingDate (Live API)');
-
-  const parsedArgs = ArgsSchema.safeParse(args);
-  if (!parsedArgs.success) {
-    console.warn('MCP: stripe.getNextBillingDate - Invalid arguments:', parsedArgs.error.flatten().fieldErrors);
-    return {
-      success: false,
-      message: "Invalid arguments.",
-      errors: parsedArgs.error.flatten().fieldErrors,
-      data: null
-    };
-  }
-
-  const parsedAuth = AuthSchema.safeParse(auth);
-  if (!parsedAuth.success) {
-    console.warn('MCP: stripe.getNextBillingDate - Invalid auth:', parsedAuth.error.flatten().fieldErrors);
-    return {
-      success: false,
-      message: "Invalid auth information (Stripe API key).",
-      errors: parsedAuth.error.flatten().fieldErrors,
-      data: null
-    };
-  }
-
-  const { customerId } = parsedArgs.data;
-  const { token: apiKey } = parsedAuth.data; // Stripe Secret Key
-
+async function getNextBillingDateInternal({ customerId, apiKey }) {
   try {
-    console.log(`Calling Stripe API to get active subscriptions for customer: ${customerId}`);
-    // Fetch active subscriptions for the customer
-    // We are interested in the 'current_period_end' for the next billing date.
     const response = await axios.get('https://api.stripe.com/v1/subscriptions', {
       params: {
         customer: customerId,
-        status: 'active', // Only fetch active subscriptions
-        limit: 1 // Typically a customer has one active subscription for a given product,
-                 // but Stripe allows multiple. Fetching 1 is usually what's desired for "next billing date".
-                 // If multiple active subscriptions exist, this will pick the most recently created one.
+        status: 'active',
+        limit: 1
       },
       headers: {
         'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
       }
     });
 
     if (response.data && response.data.data && response.data.data.length > 0) {
       const subscription = response.data.data[0];
-      // Transform Stripe subscription object to our desired MCP data structure
-      const subscriptionData = {
+      return {
         customerId: subscription.customer,
         subscriptionId: subscription.id,
-        nextBillingDate: new Date(subscription.current_period_end * 1000).toISOString(), // Unix timestamp
+        nextBillingDate: new Date(subscription.current_period_end * 1000).toISOString(),
         planId: subscription.plan?.id,
-        planName: subscription.plan?.nickname || subscription.plan?.product || subscription.items?.data[0]?.plan?.nickname || 'N/A', // Try to find a plan name
-        status: subscription.status, // Should be 'active'
+        planName: subscription.plan?.nickname || subscription.plan?.product || subscription.items?.data[0]?.plan?.nickname || 'N/A',
+        status: subscription.status,
         trialEndDate: subscription.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : null,
-        // Add other fields as needed
-      };
-      return {
-        success: true,
-        data: subscriptionData,
-        message: "Next billing date retrieved successfully."
       };
     } else {
-      return {
-        success: true, // Successfully queried API, but no active subscription found
-        data: null,
-        message: "No active subscriptions found for this customer."
-      };
+      return null; // No active subscription found
     }
   } catch (error) {
-    console.error("Error calling Stripe API (getNextBillingDate/subscriptions):", error.message);
-    let errorMessage = "An unexpected error occurred while trying to retrieve subscription data from Stripe.";
-    let errorDetails = null;
-
+    console.error(`Error calling Stripe API (getNextBillingDate for customer ${customerId}):`, error.message);
+    let errorMessage = `An unexpected error occurred while trying to retrieve next billing date for customer ${customerId} from Stripe.`;
     if (error.response) {
-      console.error('Stripe API Error Status:', error.response.status);
-      console.error('Stripe API Error Data:', error.response.data);
-      errorMessage = `Stripe API Error: ${error.response.data?.error?.message || error.response.statusText || 'Failed to retrieve data'}`;
-      errorDetails = {
-        status: error.response.status,
-        data: error.response.data?.error
-      };
+      if (error.response.data && error.response.data.error && error.response.data.error.message) {
+        errorMessage = `Stripe API Error: ${error.response.data.error.message}`;
+      } else if (error.response.statusText) {
+        errorMessage = `Stripe API Error: ${error.response.statusText}`;
+      } else {
+        errorMessage = `Stripe API Error: Status code ${error.response.status}`;
+      }
+      // A 404 for customerId in a list subscriptions call might just return empty data,
+      // but if Stripe does return 404 for this, it could be handled.
+      // The current logic of returning null for empty data array covers "no active subscriptions".
     } else if (error.request) {
-      errorMessage = "No response received from Stripe API. Check network connectivity.";
+      errorMessage = `No response received from Stripe API when fetching next billing date for customer ${customerId}. Check network connectivity.`;
+    } else if (error.message) {
+        errorMessage = error.message;
     }
-
-    return {
-      success: false,
-      message: errorMessage,
-      data: null,
-      errors: errorDetails
-    };
+    throw new Error(errorMessage);
   }
 }
 
+// Main handler function called by server.js
+async function handler({ args, auth }) {
+  const parsedArgs = ArgsSchema.parse(args);
+  const parsedAuth = ConnectionSchema.parse(auth);
+
+  return getNextBillingDateInternal({
+    customerId: parsedArgs.customerId,
+    apiKey: parsedAuth.token
+  });
+}
+
 module.exports = {
-  handler: handleGetNextBillingDate,
-  ArgsSchema: ArgsSchema,
-  AuthSchema: AuthSchema
+  handler,
+  ArgsSchema,
+  ConnectionSchema,
+  meta: {
+    description: "Fetches the next billing date for a customer by looking at their most recent active subscription.",
+    parameters: ArgsSchema.shape,
+    auth: ['token'],
+    authRequirements: "Requires a Stripe Secret Key as 'token' in the auth object.",
+  }
 };

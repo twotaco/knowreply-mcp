@@ -1,5 +1,5 @@
 // handlers/wordpress/getUsers.test.js
-const { handler, ArgsSchema, AuthSchema } = require('./getUsers');
+const { handler, ArgsSchema, ConnectionSchema } = require('./getUsers'); // Updated to import ConnectionSchema
 const axios = require('axios');
 
 jest.mock('axios');
@@ -12,7 +12,7 @@ describe('WordPress getUsers Handler', () => {
     axios.get.mockReset();
   });
 
-  const validAuth = { baseUrl: mockBaseUrl, token: mockToken };
+  const validAuth = { baseUrl: mockBaseUrl, token: mockToken }; // This structure is compatible with ConnectionSchema
   const mockUserListResponse = [
     { id: 1, name: 'Admin User', slug: 'admin', email: 'admin@example.com' },
     { id: 2, name: 'Editor Bob', slug: 'editorbob' }
@@ -112,18 +112,18 @@ describe('WordPress getUsers Handler', () => {
       .rejects.toThrow('No response received from WordPress API when fetching users. Check network connectivity.');
   });
 
-  const expectZodError = async (args, auth, expectedMessagePart) => {
+  const expectZodError = async (args, auth, expectedMessagePart, isExact = false) => { // Added isExact
       try {
           await handler({ args, auth });
           throw new Error('Handler did not throw an error as expected.');
       } catch (error) {
           expect(error.name).toBe('ZodError');
-          const hasMatchingError = error.errors.some(err => err.message.includes(expectedMessagePart));
-          expect(hasMatchingError).toBe(true);
+          const foundError = error.errors.find(e => isExact ? e.message === expectedMessagePart : e.message.includes(expectedMessagePart));
+          expect(foundError).toBeDefined();
       }
   };
 
-  describe('ArgsSchema and AuthSchema Validation', () => {
+  describe('ArgsSchema and ConnectionSchema Validation', () => { // Updated describe
     it('should accept empty args (all filters optional)', async () => {
       axios.get.mockResolvedValue({ data: mockUserListResponse });
       await expect(handler({ args: {}, auth: validAuth })).resolves.toEqual(mockUserListResponse);
@@ -134,16 +134,15 @@ describe('WordPress getUsers Handler', () => {
     });
 
     it('should throw Zod error if baseUrl is missing in auth', async () => {
-      await expectZodError({}, { token: mockToken }, "Required");
+      await expectZodError({}, { token: mockToken }, "Required", true);
     });
 
     it('should throw Zod error if baseUrl is invalid in auth', async () => {
-      // The custom message for .url() in AuthSchema is "WordPress base URL is required."
       await expectZodError({}, { baseUrl: 'invalid-url', token: mockToken }, "WordPress base URL is required.");
     });
 
     it('should throw Zod error if token is missing in auth', async () => {
-      await expectZodError({}, { baseUrl: mockBaseUrl }, "Required");
+      await expectZodError({}, { baseUrl: mockBaseUrl }, "Required", true);
     });
 
     it('should throw Zod error if token is an empty string in auth', async () => {

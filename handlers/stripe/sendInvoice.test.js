@@ -1,5 +1,5 @@
 // handlers/stripe/sendInvoice.test.js
-const { handler, ArgsSchema, AuthSchema } = require('./sendInvoice');
+const { handler, ArgsSchema, ConnectionSchema } = require('./sendInvoice'); // Updated to import ConnectionSchema
 const axios = require('axios');
 
 jest.mock('axios');
@@ -13,15 +13,14 @@ describe('Stripe sendInvoice Handler', () => {
   });
 
   const validArgs = { invoiceId: mockInvoiceId };
-  const validAuth = { token: mockApiKey };
+  const validAuth = { token: mockApiKey }; // This structure is compatible with the new ConnectionSchema
 
   it('should send an invoice successfully', async () => {
     const stripeInvoiceResponse = {
       id: mockInvoiceId,
       object: 'invoice',
-      status: 'open', // Or 'sent', depending on Stripe's immediate response
+      status: 'open',
       sent: true,
-      // ... other Stripe invoice fields
     };
     axios.post.mockResolvedValue({ data: stripeInvoiceResponse });
 
@@ -29,7 +28,7 @@ describe('Stripe sendInvoice Handler', () => {
 
     expect(axios.post).toHaveBeenCalledWith(
       `https://api.stripe.com/v1/invoices/${mockInvoiceId}/send`,
-      null, // No body
+      null,
       {
         headers: { 'Authorization': `Bearer ${mockApiKey}` },
       }
@@ -51,7 +50,7 @@ describe('Stripe sendInvoice Handler', () => {
   it('should throw a specific error if invoice cannot be sent (e.g., already paid)', async () => {
     const apiError = new Error('Request failed with status code 400');
     apiError.response = {
-      status: 400, // Status might vary, but code is key
+      status: 400,
       data: {
         error: {
           code: 'invoice_payment_action_not_supported',
@@ -75,43 +74,38 @@ describe('Stripe sendInvoice Handler', () => {
 
   it('should throw an error if no response received from Stripe API', async () => {
     const networkError = new Error('Network timeout');
-    networkError.request = {}; // Indicates a request was made
+    networkError.request = {};
     axios.post.mockRejectedValue(networkError);
 
     await expect(handler({ args: validArgs, auth: validAuth }))
       .rejects.toThrow(`No response received from Stripe API when trying to send invoice ${mockInvoiceId}. Check network connectivity.`);
   });
 
-  // Helper for Zod validation error checks
-  const expectZodError = async (args, auth, expectedMessagePart) => {
+  const expectZodError = async (args, auth, expectedMessagePart, isExact = false) => { // Added isExact flag
       try {
           await handler({ args, auth });
           throw new Error('Handler did not throw an error as expected.');
       } catch (error) {
           expect(error.name).toBe('ZodError');
-          const hasMatchingError = error.errors.some(err => err.message.includes(expectedMessagePart));
-          expect(hasMatchingError).toBe(true);
+          const foundError = error.errors.find(e => isExact ? e.message === expectedMessagePart : e.message.includes(expectedMessagePart));
+          expect(foundError).toBeDefined();
       }
   };
 
-  describe('ArgsSchema and AuthSchema Validation', () => {
+  describe('ArgsSchema and ConnectionSchema Validation', () => { // Updated describe block name
     it('should throw Zod error if invoiceId is missing in args', async () => {
-      // ArgsSchema expects 'invoiceId'. If args is {}, invoiceId is missing.
-      await expectZodError({}, validAuth, "Required");
+      await expectZodError({}, validAuth, "Required", true);
     });
 
     it('should throw Zod error if invoiceId is an empty string in args', async () => {
-      // ArgsSchema has .min(1) for invoiceId.
       await expectZodError({ invoiceId: '' }, validAuth, "Stripe Invoice ID is required.");
     });
 
     it('should throw Zod error if token is missing in auth', async () => {
-      // AuthSchema expects 'token'. If auth is {}, token is missing.
-      await expectZodError(validArgs, {}, "Required");
+      await expectZodError(validArgs, {}, "Required", true);
     });
 
     it('should throw Zod error if token is an empty string in auth', async () => {
-      // AuthSchema has .min(1) for token.
       await expectZodError(validArgs, { token: "" }, "Stripe API key (secret key) is required.");
     });
   });

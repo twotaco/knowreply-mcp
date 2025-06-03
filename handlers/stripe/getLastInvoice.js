@@ -1,82 +1,44 @@
-const z = require('zod');
-const axios = require('axios'); // Import axios
+const { z } = require('zod');
+const axios = require('axios');
 
-// Zod Schemas for validation (remain the same)
+// Zod Schema for arguments
 const ArgsSchema = z.object({
   customerId: z.string().min(1, { message: "Customer ID cannot be empty." })
 });
 
-const AuthSchema = z.object({
-  token: z.string().min(1, { message: "Stripe API key (secret key) cannot be empty." })
+// Zod Schema for connection object (renamed from AuthSchema)
+const ConnectionSchema = z.object({
+  token: z.string().min(1, { message: "Stripe API key (secret key) is required." })
 });
 
-// The _mockStripeApi_getLastInvoice function is removed or commented out.
-
-async function handleGetLastInvoice({ args, auth }) {
-  console.log('Executing MCP: stripe.getLastInvoice (Live API)');
-
-  const parsedArgs = ArgsSchema.safeParse(args);
-  if (!parsedArgs.success) {
-    console.warn('MCP: stripe.getLastInvoice - Invalid arguments:', parsedArgs.error.flatten().fieldErrors);
-    return {
-      success: false,
-      message: "Invalid arguments.",
-      errors: parsedArgs.error.flatten().fieldErrors,
-      data: null
-    };
-  }
-
-  const parsedAuth = AuthSchema.safeParse(auth);
-  if (!parsedAuth.success) {
-    console.warn('MCP: stripe.getLastInvoice - Invalid auth:', parsedAuth.error.flatten().fieldErrors);
-    return {
-      success: false,
-      message: "Invalid auth information (Stripe API key).",
-      errors: parsedAuth.error.flatten().fieldErrors,
-      data: null
-    };
-  }
-
-  const { customerId } = parsedArgs.data;
-  const { token: apiKey } = parsedAuth.data; // Stripe Secret Key
-
+async function getLastInvoiceInternal({ customerId, apiKey }) {
   try {
-    console.log(`Calling Stripe API to get last invoice for customer: ${customerId}`);
-    // Fetch invoices for the customer, order by creation date descending (Stripe default is descending by created)
-    // We can also filter by status if needed, e.g., ['open', 'paid']
-    // The design doc mentioned "most recent invoice with amount, status."
     const response = await axios.get('https://api.stripe.com/v1/invoices', {
       params: {
         customer: customerId,
-        limit: 1, // Get only the most recent one
-        // status: 'paid' // Optional: filter by status, e.g., only 'paid' or 'open' invoices
-                         // Or fetch without status and return whatever is most recent.
-                         // For now, let's fetch the absolute most recent regardless of status
-                         // to match "most recent invoice" broadly.
+        limit: 1,
+        // Stripe's default list order is descending by created date.
       },
       headers: {
         'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
       }
     });
 
     if (response.data && response.data.data && response.data.data.length > 0) {
       const invoice = response.data.data[0];
-      // Transform Stripe invoice object to our desired MCP data structure
-      // This should align with the fields previously in the mock.
-      const invoiceData = {
+      return {
         id: invoice.id,
         customer: invoice.customer,
         amount_due: invoice.amount_due,
         amount_paid: invoice.amount_paid,
         amount_remaining: invoice.amount_remaining,
         currency: invoice.currency,
-        status: invoice.status, // e.g., 'draft', 'open', 'paid', 'uncollectible', 'void'
-        due_date: invoice.due_date ? new Date(invoice.due_date * 1000).toISOString() : null, // Unix timestamp
-        created: invoice.created ? new Date(invoice.created * 1000).toISOString() : null, // Unix timestamp
+        status: invoice.status,
+        due_date: invoice.due_date,
+        created: invoice.created,
         invoice_pdf: invoice.invoice_pdf,
         hosted_invoice_url: invoice.hosted_invoice_url,
-        lines: invoice.lines.data.map(line => ({ // Simplify line items
+        lines: invoice.lines.data.map(line => ({
             id: line.id,
             description: line.description,
             amount: line.amount,
@@ -84,48 +46,53 @@ async function handleGetLastInvoice({ args, auth }) {
             quantity: line.quantity,
             period: line.period
         }))
-        // Add other fields as needed
-      };
-      return {
-        success: true,
-        data: invoiceData,
-        message: "Last invoice retrieved successfully."
       };
     } else {
-      return {
-        success: true, // Successfully queried API, but no invoice found
-        data: null,
-        message: "No invoices found for this customer."
-      };
+      return null; // No invoice found
     }
   } catch (error) {
-    console.error("Error calling Stripe API (getLastInvoice):", error.message);
-    let errorMessage = "An unexpected error occurred while trying to retrieve the last invoice from Stripe.";
-    let errorDetails = null;
-
+    console.error(`Error calling Stripe API (getLastInvoice for customer ${customerId}):`, error.message);
+    let errorMessage = `An unexpected error occurred while trying to retrieve the last invoice for customer ${customerId} from Stripe.`;
     if (error.response) {
-      console.error('Stripe API Error Status:', error.response.status);
-      console.error('Stripe API Error Data:', error.response.data);
-      errorMessage = `Stripe API Error: ${error.response.data?.error?.message || error.response.statusText || 'Failed to retrieve data'}`;
-      errorDetails = {
-        status: error.response.status,
-        data: error.response.data?.error
-      };
+      if (error.response.data && error.response.data.error && error.response.data.error.message) {
+        errorMessage = `Stripe API Error: ${error.response.data.error.message}`;
+      } else if (error.response.statusText) {
+        errorMessage = `Stripe API Error: ${error.response.statusText}`;
+      } else {
+        errorMessage = `Stripe API Error: Status code ${error.response.status}`;
+      }
+      // For a list endpoint, a 404 might mean the customer doesn't exist or has no invoices,
+      // but often it just returns an empty list. Explicit 404 handling might be less common here
+      // than for direct ID lookups unless Stripe specifically documents it for this case.
+      // The current logic of returning null for empty data array covers "no invoices found".
     } else if (error.request) {
-      errorMessage = "No response received from Stripe API. Check network connectivity.";
+      errorMessage = `No response received from Stripe API when fetching last invoice for customer ${customerId}. Check network connectivity.`;
+    } else if (error.message) {
+        errorMessage = error.message;
     }
-
-    return {
-      success: false,
-      message: errorMessage,
-      data: null,
-      errors: errorDetails
-    };
+    throw new Error(errorMessage);
   }
 }
 
+// Main handler function called by server.js
+async function handler({ args, auth }) {
+  const parsedArgs = ArgsSchema.parse(args);
+  const parsedAuth = ConnectionSchema.parse(auth); // Use ConnectionSchema
+
+  return getLastInvoiceInternal({
+    customerId: parsedArgs.customerId,
+    apiKey: parsedAuth.token
+  });
+}
+
 module.exports = {
-  handler: handleGetLastInvoice,
-  ArgsSchema: ArgsSchema,
-  AuthSchema: AuthSchema
+  handler,
+  ArgsSchema,
+  ConnectionSchema,
+  meta: {
+    description: "Fetches the most recent invoice for a given Stripe customer ID.",
+    parameters: ArgsSchema.shape,
+    auth: ['token'],
+    authRequirements: "Requires a Stripe Secret Key as 'token' in the auth object.",
+  }
 };

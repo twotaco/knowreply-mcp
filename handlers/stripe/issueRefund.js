@@ -1,60 +1,37 @@
-const z = require('zod');
-const axios = require('axios'); // Import axios
-const qs = require('qs'); // Import qs for form data encoding
+const { z } = require('zod');
+const axios = require('axios');
+const qs = require('qs'); // For 'application/x-www-form-urlencoded'
 
-// Zod Schemas for validation (remain the same)
+// Zod Schema for arguments
 const ArgsSchema = z.object({
   chargeId: z.string().min(1, { message: "Charge ID cannot be empty." }),
-  amount: z.number().positive({ message: "Amount must be a positive number." }).int({ message: "Amount must be an integer (cents)."}).optional() // Amount in cents, optional for full refund
+  amount: z.number().positive({ message: "Amount must be a positive number." })
+           .int({ message: "Amount must be an integer (cents)."}).optional()
+           .describe("Amount in cents to refund. If not provided, a full refund is attempted."),
+  reason: z.enum(['duplicate', 'fraudulent', 'requested_by_customer']).optional()
+            .describe("Reason for the refund."),
+  // Other potential refund params: metadata, reverse_transfer, refund_application_fee
 });
 
-const AuthSchema = z.object({
-  token: z.string().min(1, { message: "Stripe API key (secret key) cannot be empty." })
+// Zod Schema for connection object
+const ConnectionSchema = z.object({
+  token: z.string().min(1, { message: "Stripe API key (secret key) is required." })
 });
 
-// The _mockStripeApi_issueRefund function is removed or commented out.
-
-async function handleIssueRefund({ args, auth }) {
-  console.log('Executing MCP: stripe.issueRefund (Live API)');
-
-  const parsedArgs = ArgsSchema.safeParse(args);
-  if (!parsedArgs.success) {
-    console.warn('MCP: stripe.issueRefund - Invalid arguments:', parsedArgs.error.flatten().fieldErrors);
-    return {
-      success: false,
-      message: "Invalid arguments.",
-      errors: parsedArgs.error.flatten().fieldErrors,
-      data: null
-    };
+async function issueRefundInternal({ chargeId, apiKey, amount, reason }) {
+  const requestBody = {
+    charge: chargeId,
+  };
+  if (amount) {
+    requestBody.amount = amount;
+  }
+  if (reason) {
+    requestBody.reason = reason;
   }
 
-  const parsedAuth = AuthSchema.safeParse(auth);
-  if (!parsedAuth.success) {
-    console.warn('MCP: stripe.issueRefund - Invalid auth:', parsedAuth.error.flatten().fieldErrors);
-    return {
-      success: false,
-      message: "Invalid auth information (Stripe API key).",
-      errors: parsedAuth.error.flatten().fieldErrors,
-      data: null
-    };
-  }
-
-  const { chargeId, amount } = parsedArgs.data; // amount is optional (integer in cents)
-  const { token: apiKey } = parsedAuth.data; // Stripe Secret Key
+  const encodedRequestBody = qs.stringify(requestBody);
 
   try {
-    console.log(`Calling Stripe API to issue refund for charge: ${chargeId}${amount ? ` with amount: ${amount}` : ' (full refund)'}`);
-
-    const requestBody = {
-      charge: chargeId,
-    };
-    if (amount) {
-      requestBody.amount = amount;
-    }
-
-    // Stripe expects form-urlencoded data for POST requests
-    const encodedRequestBody = qs.stringify(requestBody);
-
     const response = await axios.post('https://api.stripe.com/v1/refunds', encodedRequestBody, {
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -62,60 +39,62 @@ async function handleIssueRefund({ args, auth }) {
       }
     });
 
-    if (response.data && response.data.id) {
-      const refund = response.data;
-      // Transform Stripe refund object to our desired MCP data structure
-      const refundData = {
-        id: refund.id,
-        amount: refund.amount, // Amount refunded, in cents
-        charge: refund.charge,
-        currency: refund.currency,
-        status: refund.status, // e.g., 'succeeded', 'pending', 'failed', 'canceled'
-        reason: refund.reason,
-        created: refund.created ? new Date(refund.created * 1000).toISOString() : null, // Unix timestamp
-        // Add other fields as needed
-      };
-      return {
-        success: true,
-        data: refundData,
-        message: `Refund ${refund.status}.` // More dynamic message
-      };
-    } else {
-      // This case might not be typical for Stripe if an error doesn't throw an HTTP error code
-      return {
-        success: false,
-        message: "Stripe API call for refund did not return expected data.",
-        data: null
-      };
-    }
-  } catch (error) {
-    console.error("Error calling Stripe API (issueRefund):", error.message);
-    let errorMessage = "An unexpected error occurred while trying to issue the refund via Stripe.";
-    let errorDetails = null;
-
-    if (error.response) {
-      console.error('Stripe API Error Status:', error.response.status);
-      console.error('Stripe API Error Data:', error.response.data);
-      errorMessage = `Stripe API Error: ${error.response.data?.error?.message || error.response.statusText || 'Failed to process refund'}`;
-      errorDetails = {
-        status: error.response.status,
-        data: error.response.data?.error
-      };
-    } else if (error.request) {
-      errorMessage = "No response received from Stripe API. Check network connectivity.";
-    }
-
+    const refund = response.data;
     return {
-      success: false,
-      message: errorMessage,
-      data: null,
-      errors: errorDetails
+      id: refund.id,
+      amount: refund.amount,
+      charge: refund.charge,
+      currency: refund.currency,
+      status: refund.status,
+      reason: refund.reason,
+      created: new Date(refund.created * 1000).toISOString(),
+      // metadata: refund.metadata
     };
+  } catch (error) {
+    console.error(`Error calling Stripe API (issueRefund for charge ${chargeId}):`, error.message);
+    let errorMessage = `An unexpected error occurred while trying to issue refund for charge ${chargeId} via Stripe.`;
+    if (error.response) {
+      if (error.response.data && error.response.data.error && error.response.data.error.message) {
+        errorMessage = `Stripe API Error: ${error.response.data.error.message}`;
+      } else if (error.response.statusText) {
+        errorMessage = `Stripe API Error: ${error.response.statusText}`;
+      } else {
+        errorMessage = `Stripe API Error: Status code ${error.response.status}`;
+      }
+      // Example: Stripe might return a specific error code if the charge cannot be refunded
+      // if (error.response.data?.error?.code === 'charge_already_refunded') {
+      //   errorMessage = `Could not refund charge ${chargeId}: ${error.response.data.error.message}`;
+      // }
+    } else if (error.request) {
+      errorMessage = `No response received from Stripe API when trying to issue refund for charge ${chargeId}. Check network connectivity.`;
+    } else if (error.message) {
+        errorMessage = error.message;
+    }
+    throw new Error(errorMessage);
   }
 }
 
+// Main handler function called by server.js
+async function handler({ args, auth }) {
+  const parsedArgs = ArgsSchema.parse(args);
+  const parsedAuth = ConnectionSchema.parse(auth);
+
+  return issueRefundInternal({
+    chargeId: parsedArgs.chargeId,
+    amount: parsedArgs.amount,
+    reason: parsedArgs.reason,
+    apiKey: parsedAuth.token
+  });
+}
+
 module.exports = {
-  handler: handleIssueRefund,
-  ArgsSchema: ArgsSchema,
-  AuthSchema: AuthSchema
+  handler,
+  ArgsSchema,
+  ConnectionSchema,
+  meta: {
+    description: "Issues a refund for a specific charge in Stripe. Amount is optional (full refund if omitted).",
+    parameters: ArgsSchema.shape,
+    auth: ['token'],
+    authRequirements: "Requires a Stripe Secret Key as 'token' in the auth object.",
+  }
 };

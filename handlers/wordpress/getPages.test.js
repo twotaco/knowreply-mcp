@@ -1,5 +1,5 @@
 // handlers/wordpress/getPages.test.js
-const { handler, ArgsSchema, AuthSchema } = require('./getPages');
+const { handler, ArgsSchema, ConnectionSchema } = require('./getPages'); // Updated to import ConnectionSchema
 const axios = require('axios');
 
 jest.mock('axios');
@@ -12,7 +12,7 @@ describe('WordPress getPages Handler', () => {
     axios.get.mockReset();
   });
 
-  const validAuthBase = { baseUrl: mockBaseUrl }; // Token is optional
+  const validAuthBase = { baseUrl: mockBaseUrl }; // Token is optional, compatible with ConnectionSchema
   const mockPageListResponse = [
     { id: 10, title: { rendered: 'About Us' }, slug: 'about-us', content: { rendered: '<p>Content</p>' } },
     { id: 12, title: { rendered: 'Contact' }, slug: 'contact', content: { rendered: '<p>Contact page</p>' } }
@@ -20,13 +20,13 @@ describe('WordPress getPages Handler', () => {
 
   it('should fetch pages with no token and no filters (public pages)', async () => {
     axios.get.mockResolvedValue({ data: mockPageListResponse });
-    const result = await handler({ args: {}, auth: validAuthBase }); // No token
+    const result = await handler({ args: {}, auth: validAuthBase });
 
     expect(axios.get).toHaveBeenCalledWith(
       `${mockBaseUrl}/wp-json/wp/v2/pages`,
       {
         params: {},
-        headers: { 'Content-Type': 'application/json' }, // No Authorization header
+        headers: { 'Content-Type': 'application/json' },
       }
     );
     expect(result).toEqual(mockPageListResponse);
@@ -61,7 +61,7 @@ describe('WordPress getPages Handler', () => {
       `${mockBaseUrl}/wp-json/wp/v2/pages`,
       expect.objectContaining({
         params: { slug: 'contact' },
-        headers: { 'Content-Type': 'application/json' } // No auth
+        headers: { 'Content-Type': 'application/json' }
       })
     );
   });
@@ -101,25 +101,25 @@ describe('WordPress getPages Handler', () => {
       .rejects.toThrow('No response received from WordPress API when fetching pages. Check network connectivity.');
   });
 
-  const expectZodError = async (args, auth, expectedMessagePart) => {
+  const expectZodError = async (args, auth, expectedMessagePart, isExact = false) => { // Added isExact
       try {
           await handler({ args, auth });
           throw new Error('Handler did not throw an error as expected.');
       } catch (error) {
           expect(error.name).toBe('ZodError');
-          const hasMatchingError = error.errors.some(err => err.message.includes(expectedMessagePart));
-          expect(hasMatchingError).toBe(true);
+          const foundError = error.errors.find(e => isExact ? e.message === expectedMessagePart : e.message.includes(expectedMessagePart));
+          expect(foundError).toBeDefined();
       }
   };
 
-  describe('ArgsSchema and AuthSchema Validation', () => {
+  describe('ArgsSchema and ConnectionSchema Validation', () => { // Updated describe
     it('should accept empty args (all filters optional)', async () => {
       axios.get.mockResolvedValue({ data: mockPageListResponse });
       await expect(handler({ args: {}, auth: validAuthBase })).resolves.toEqual(mockPageListResponse);
     });
 
     it('should throw Zod error if baseUrl is missing in auth', async () => {
-      await expectZodError({}, { token: mockToken }, "Required");
+      await expectZodError({}, { token: mockToken }, "Required", true);
     });
 
     it('should throw Zod error if baseUrl is invalid in auth', async () => {
@@ -132,8 +132,6 @@ describe('WordPress getPages Handler', () => {
     });
 
     it('should accept empty string token (Zod pass) and not send Authorization header', async () => {
-      // Zod schema for token is .string().optional(). It allows an empty string if provided.
-      // The handler logic should then treat the empty (falsy) token as if no token was provided.
       const authWithEmptyToken = { ...validAuthBase, token: "" };
       axios.get.mockResolvedValue({ data: mockPageListResponse });
       await expect(handler({ args: {}, auth: authWithEmptyToken })).resolves.toEqual(mockPageListResponse);

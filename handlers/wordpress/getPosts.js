@@ -12,13 +12,12 @@ const ArgsSchema = z.object({
     z.number().int().positive(),
     z.string().regex(/^\d+(,\d+)*$/, { message: "Tags must be a positive integer or a comma-separated string of positive integers." })
   ]).optional().describe("Limit result set to posts assigned to specific tag IDs (comma-separated string or single number)."),
-  // Common params for listing posts: per_page, page, order, orderby, context, etc.
   // context: z.enum(['view', 'embed', 'edit']).default('view').optional(),
   // per_page: z.number().int().positive().max(100).optional().default(10),
 });
 
-// Zod Schema for authentication object (optional for public posts)
-const AuthSchema = z.object({
+// Zod Schema for WordPress connection/authentication object
+const ConnectionSchema = z.object({
   baseUrl: z.string().url({ message: "WordPress base URL is required." }),
   token: z.string().optional().describe("WordPress authentication token (e.g., Application Password). Needed for non-public posts.")
 });
@@ -29,8 +28,8 @@ async function getPostsInternal({ baseUrl, token, search, categories, tags /*, c
     // per_page: per_page,
   };
   if (search) params.search = search;
-  if (categories) params.categories = String(categories); // WP API expects comma-separated string for multiple IDs
-  if (tags) params.tags = String(tags);       // WP API expects comma-separated string for multiple IDs
+  if (categories) params.categories = String(categories);
+  if (tags) params.tags = String(tags);
 
   const url = `${baseUrl.replace(/\/$/, '')}/wp-json/wp/v2/posts`;
   const headers = {
@@ -42,12 +41,11 @@ async function getPostsInternal({ baseUrl, token, search, categories, tags /*, c
 
   try {
     const response = await axios.get(url, { headers, params });
-    return response.data; // Returns an array of post objects
+    return response.data;
   } catch (error) {
     console.error(`Error fetching posts from WordPress: ${error.message}`, error.response?.data);
     let errorMessage = 'Failed to fetch posts from WordPress.';
     if (error.response) {
-      // WordPress errors often come with a 'code' and 'message' in the response data
       if (error.response.data && error.response.data.message) {
         errorMessage = `WordPress API Error: ${error.response.data.message}`;
       } else if (error.response.statusText) {
@@ -58,12 +56,12 @@ async function getPostsInternal({ baseUrl, token, search, categories, tags /*, c
 
       if ((error.response.status === 401 || error.response.status === 403) && token) {
         errorMessage = `WordPress API Authorization Error: ${error.response.data?.message || 'Check your token and permissions for posts.'}`;
-      } else if (error.response.status === 401 && !token) { // If no token was provided and got 401
+      } else if (error.response.status === 401 && !token) {
         errorMessage = `WordPress API Error: This resource may require authentication. ${error.response.data?.message || ''}`.trim();
       }
     } else if (error.request) {
       errorMessage = 'No response received from WordPress API when fetching posts. Check network connectivity.';
-    } else if (error.message) { // Non-HTTP errors or setup issues with axios
+    } else if (error.message) {
         errorMessage = error.message;
     }
     throw new Error(errorMessage);
@@ -73,7 +71,7 @@ async function getPostsInternal({ baseUrl, token, search, categories, tags /*, c
 // Main handler function called by server.js
 async function handler({ args, auth }) {
   const parsedArgs = ArgsSchema.parse(args);
-  const parsedAuth = AuthSchema.parse(auth);
+  const parsedAuth = ConnectionSchema.parse(auth); // Use ConnectionSchema here
 
   return getPostsInternal({
     baseUrl: parsedAuth.baseUrl,
@@ -89,7 +87,7 @@ async function handler({ args, auth }) {
 module.exports = {
   handler,
   ArgsSchema,
-  AuthSchema,
+  ConnectionSchema, // Export ConnectionSchema instead of AuthSchema
   meta: {
     description: "Fetches posts from WordPress. Supports filtering by search term, category IDs, or tag IDs. Authentication is optional for public posts.",
     parameters: ArgsSchema.shape,

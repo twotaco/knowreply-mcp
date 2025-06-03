@@ -13,28 +13,23 @@ const ArgsSchema = z.object({
   // context: z.enum(['view', 'embed', 'edit']).default('view').optional(), // Scope under which the request is made
 });
 
-// Zod Schema for authentication object
-const AuthSchema = z.object({
+// Zod Schema for WordPress connection/authentication object
+const ConnectionSchema = z.object({
   baseUrl: z.string().url({ message: "WordPress base URL is required." }),
   token: z.string().min(1, { message: "WordPress authentication token (e.g., Application Password) is required." })
 });
 
 async function getUsersInternal({ baseUrl, token, email, search /*, roles, slug, context*/ }) {
   const params = {
-    // context: context, // Default is 'view'
+    // context: context,
   };
   if (email) {
-    // WordPress /wp/v2/users doesn't directly filter by email param.
-    // 'search' is the common way, or if you know the user ID.
-    // For a direct email lookup, you might need a custom WP endpoint or iterate if 'search' returns many.
-    // We'll use 'search' for email for simplicity here, assuming it works for most cases.
     params.search = email;
   } else if (search) {
     params.search = search;
   }
   // if (roles && roles.length > 0) params.roles = roles.join(',');
   // if (slug) params.slug = slug;
-
 
   const url = `${baseUrl.replace(/\/$/, '')}/wp-json/wp/v2/users`;
 
@@ -46,16 +41,11 @@ async function getUsersInternal({ baseUrl, token, email, search /*, roles, slug,
       },
       params,
     });
-    // The response is an array of user objects.
-    // If searching by a unique email, you might expect 0 or 1 result.
-    // If 'email' was used in params.search and multiple users match parts of it, you might get more.
-    // For a strict email lookup, client might need to filter response if length > 1.
     return response.data;
   } catch (error) {
     console.error(`Error fetching users from WordPress: ${error.message}`, error.response?.data);
     let errorMessage = 'Failed to fetch users from WordPress.';
     if (error.response) {
-      // WordPress errors often come with a 'code' and 'message' in the response data
       if (error.response.data && error.response.data.message) {
         errorMessage = `WordPress API Error: ${error.response.data.message}`;
       } else if (error.response.statusText) {
@@ -69,7 +59,7 @@ async function getUsersInternal({ baseUrl, token, email, search /*, roles, slug,
       }
     } else if (error.request) {
       errorMessage = 'No response received from WordPress API when fetching users. Check network connectivity.';
-    } else if (error.message) { // Non-HTTP errors or setup issues with axios
+    } else if (error.message) {
         errorMessage = error.message;
     }
     throw new Error(errorMessage);
@@ -79,7 +69,7 @@ async function getUsersInternal({ baseUrl, token, email, search /*, roles, slug,
 // Main handler function called by server.js
 async function handler({ args, auth }) {
   const parsedArgs = ArgsSchema.parse(args);
-  const parsedAuth = AuthSchema.parse(auth);
+  const parsedAuth = ConnectionSchema.parse(auth); // Use ConnectionSchema here
 
   return getUsersInternal({
     baseUrl: parsedAuth.baseUrl,
@@ -95,11 +85,11 @@ async function handler({ args, auth }) {
 module.exports = {
   handler,
   ArgsSchema,
-  AuthSchema,
+  ConnectionSchema, // Export ConnectionSchema instead of AuthSchema
   meta: {
     description: "Fetches users from WordPress. Supports searching by email (via general search) or a search term. Requires authentication.",
     parameters: ArgsSchema.shape,
-    auth: ['baseUrl', 'token'], // Indicates fields expected in the 'auth' object
+    auth: ['baseUrl', 'token'],
     authRequirements: "Requires WordPress Base URL and an Authentication Token (e.g., Application Password) in the auth object.",
   }
 };

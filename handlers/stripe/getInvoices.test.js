@@ -1,5 +1,5 @@
 // handlers/stripe/getInvoices.test.js
-const { handler, ArgsSchema, AuthSchema } = require('./getInvoices');
+const { handler, ArgsSchema, ConnectionSchema } = require('./getInvoices'); // Updated to import ConnectionSchema
 const axios = require('axios');
 
 jest.mock('axios');
@@ -11,7 +11,7 @@ describe('Stripe getInvoices Handler', () => {
     axios.get.mockReset();
   });
 
-  const validAuth = { token: mockApiKey };
+  const validAuth = { token: mockApiKey }; // This structure is compatible with the new ConnectionSchema
   const mockInvoiceListResponse = {
     object: 'list',
     data: [
@@ -38,12 +38,12 @@ describe('Stripe getInvoices Handler', () => {
 
   it('should fetch invoices with customerId filter', async () => {
     const args = { customerId: 'cus_123' };
-    axios.get.mockResolvedValue({ data: { ...mockInvoiceListResponse, data: [mockInvoiceListResponse.data[0]]} }); // Simulating filtered response
+    axios.get.mockResolvedValue({ data: { ...mockInvoiceListResponse, data: [mockInvoiceListResponse.data[0]]} });
     await handler({ args, auth: validAuth });
 
     expect(axios.get).toHaveBeenCalledWith(
       'https://api.stripe.com/v1/invoices',
-      expect.objectContaining({ params: { customer: 'cus_123' } })
+      expect.objectContaining({ params: { customer: 'cus_123' }, headers: { 'Authorization': `Bearer ${mockApiKey}` } })
     );
   });
 
@@ -54,7 +54,7 @@ describe('Stripe getInvoices Handler', () => {
 
     expect(axios.get).toHaveBeenCalledWith(
       'https://api.stripe.com/v1/invoices',
-      expect.objectContaining({ params: { status: 'paid', limit: 10 } })
+      expect.objectContaining({ params: { status: 'paid', limit: 10 }, headers: { 'Authorization': `Bearer ${mockApiKey}` } })
     );
   });
 
@@ -65,7 +65,7 @@ describe('Stripe getInvoices Handler', () => {
 
     expect(axios.get).toHaveBeenCalledWith(
       'https://api.stripe.com/v1/invoices',
-      expect.objectContaining({ params: { subscription: 'sub_123', starting_after: 'in_prev123' } })
+      expect.objectContaining({ params: { subscription: 'sub_123', starting_after: 'in_prev123' }, headers: { 'Authorization': `Bearer ${mockApiKey}` } })
     );
   });
 
@@ -80,34 +80,32 @@ describe('Stripe getInvoices Handler', () => {
 
   it('should throw an error if no response received from Stripe API', async () => {
     const networkError = new Error('Network problem');
-    networkError.request = {}; // Indicates a request was made
+    networkError.request = {};
     axios.get.mockRejectedValue(networkError);
 
     await expect(handler({ args: {}, auth: validAuth }))
       .rejects.toThrow('No response received from Stripe API when fetching invoices. Check network connectivity.');
   });
 
-  // Helper for Zod validation error checks
-  const expectZodError = async (args, auth, expectedMessagePart) => {
+  const expectZodError = async (args, auth, expectedMessagePart, isExact = false) => { // Added isExact flag
       try {
           await handler({ args, auth });
           throw new Error('Handler did not throw an error as expected.');
       } catch (error) {
           expect(error.name).toBe('ZodError');
-          const hasMatchingError = error.errors.some(err => err.message.includes(expectedMessagePart));
-          expect(hasMatchingError).toBe(true);
+          const foundError = error.errors.find(e => isExact ? e.message === expectedMessagePart : e.message.includes(expectedMessagePart));
+          expect(foundError).toBeDefined();
       }
   };
 
-  describe('ArgsSchema and AuthSchema Validation', () => {
+  describe('ArgsSchema and ConnectionSchema Validation', () => { // Updated describe block name
     it('should accept empty args (all filters optional)', async () => {
       axios.get.mockResolvedValue({ data: mockInvoiceListResponse });
       await expect(handler({ args: {}, auth: validAuth })).resolves.toEqual(mockInvoiceListResponse);
     });
 
     it('should throw Zod error for invalid status enum', async () => {
-      // Zod's message for invalid enum is quite specific.
-      await expectZodError({ status: 'pending' }, validAuth, "Invalid enum value. Expected 'draft' | 'open' | 'paid' | 'uncollectible' | 'void'");
+      await expectZodError({ status: 'pending_payment' }, validAuth, "Invalid enum value. Expected 'draft' | 'open' | 'paid' | 'uncollectible' | 'void'");
     });
 
     it('should throw Zod error for invalid limit type', async () => {
@@ -120,12 +118,10 @@ describe('Stripe getInvoices Handler', () => {
     });
 
     it('should throw Zod error if token is missing in auth', async () => {
-      // AuthSchema expects 'token'. If auth is {}, token is missing.
-      await expectZodError({}, {}, "Required");
+      await expectZodError({}, {}, "Required", true);
     });
 
     it('should throw Zod error if token is an empty string in auth', async () => {
-      // AuthSchema has .min(1) for token.
       await expectZodError({}, { token: "" }, "Stripe API key (secret key) is required.");
     });
   });

@@ -6,14 +6,13 @@ const ArgsSchema = z.object({
   customerId: z.string().optional().describe("ID of the customer whose invoices to retrieve."),
   subscriptionId: z.string().optional().describe("ID of the subscription whose invoices to retrieve."),
   status: z.enum(['draft', 'open', 'paid', 'uncollectible', 'void']).optional().describe("The status of the invoices to retrieve."),
-  // Common params for listing invoices: limit, starting_after, ending_before
   limit: z.number().int().positive().max(100).optional().describe("A limit on the number of objects to be returned, between 1 and 100."),
   starting_after: z.string().optional().describe("A cursor for use in pagination."),
   ending_before: z.string().optional().describe("A cursor for use in pagination."),
 });
 
-// Zod Schema for authentication object
-const AuthSchema = z.object({
+// Zod Schema for Stripe connection/authentication object
+const ConnectionSchema = z.object({
   token: z.string().min(1, { message: "Stripe API key (secret key) is required." })
 });
 
@@ -33,23 +32,21 @@ async function getInvoicesInternal({ apiKey, customerId, subscriptionId, status,
         'Authorization': `Bearer ${apiKey}`,
       }
     });
-    // Stripe list endpoints return an object with a 'data' array containing the items
-    return response.data; // Returns the list object (e.g., { object: 'list', data: [...], has_more: ...})
+    return response.data;
   } catch (error) {
     console.error(`Error calling Stripe API (getInvoices):`, error.message);
     let errorMessage = 'An unexpected error occurred while trying to retrieve invoices from Stripe.';
     if (error.response) {
-      // Prioritize Stripe's error message if available
       if (error.response.data && error.response.data.error && error.response.data.error.message) {
         errorMessage = `Stripe API Error: ${error.response.data.error.message}`;
-      } else if (error.response.statusText) { // Fallback to statusText if no specific message
+      } else if (error.response.statusText) {
         errorMessage = `Stripe API Error: ${error.response.statusText}`;
       } else {
         errorMessage = `Stripe API Error: Status code ${error.response.status}`;
       }
     } else if (error.request) {
       errorMessage = 'No response received from Stripe API when fetching invoices. Check network connectivity.';
-    } else if (error.message) { // Non-HTTP errors or setup issues with axios
+    } else if (error.message) {
         errorMessage = error.message;
     }
     throw new Error(errorMessage);
@@ -59,7 +56,7 @@ async function getInvoicesInternal({ apiKey, customerId, subscriptionId, status,
 // Main handler function called by server.js
 async function handler({ args, auth }) {
   const parsedArgs = ArgsSchema.parse(args);
-  const parsedAuth = AuthSchema.parse(auth);
+  const parsedAuth = ConnectionSchema.parse(auth); // Use ConnectionSchema here
 
   return getInvoicesInternal({
     apiKey: parsedAuth.token,
@@ -75,7 +72,7 @@ async function handler({ args, auth }) {
 module.exports = {
   handler,
   ArgsSchema,
-  AuthSchema,
+  ConnectionSchema, // Export ConnectionSchema instead of AuthSchema
   meta: {
     description: "Fetches a list of invoices from Stripe. Supports filtering by customer ID, subscription ID, status, and pagination.",
     parameters: ArgsSchema.shape,
