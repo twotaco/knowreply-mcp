@@ -11,6 +11,18 @@ const ConnectionSchema = z.object({
   token: z.string().min(1, { message: "Stripe API key (secret key) is required." })
 });
 
+// Zod Schema for the output of the handler
+const OutputSchema = z.object({
+  id: z.string(),
+  name: z.string().nullable(),
+  email: z.string().email().nullable(),
+  phone: z.string().nullable(),
+  created: z.number(),
+  currency: z.string().nullable(),
+  livemode: z.boolean(),
+  metadata: z.record(z.string(), z.any()),
+}).nullable(); // The function can return null if no customer is found
+
 async function getCustomerByEmailInternal({ email, apiKey }) {
   try {
     const response = await axios.get('https://api.stripe.com/v1/customers', {
@@ -67,6 +79,7 @@ module.exports = {
   handler,
   ArgsSchema,
   ConnectionSchema, // Export ConnectionSchema instead of AuthSchema
+  OutputSchema, // Export the new OutputSchema
   meta: {
     description: "Fetches a customer from Stripe by their email address. Returns the first customer if multiple exist with the same email.",
     parameters: ArgsSchema.shape,

@@ -195,6 +195,19 @@ async function startServer() {
                     actionMeta.auth_requirements = handlerModule.meta.authRequirements;
                 }
 
+                // Add OutputSchema details if available
+                if (handlerModule.OutputSchema && typeof handlerModule.OutputSchema.parse === 'function') {
+                  try {
+                    const outputSchemaDetails = getZodSchemaDetails(handlerModule.OutputSchema);
+                    actionMeta.output_schema = outputSchemaDetails;
+                  } catch (schemaErr) {
+                    console.warn(`[Discover] Error processing OutputSchema for ${providerName}/${actionName}: ${schemaErr.message}`);
+                    actionMeta.description += ` (Error processing OutputSchema: ${schemaErr.message})`;
+                  }
+                } else if (handlerModule.OutputSchema) {
+                    console.warn(`[Discover] OutputSchema found for ${providerName}/${actionName} but it's not a Zod schema (missing parse method)`);
+                }
+
               } catch (err) {
                 console.error(`[Discover] Error processing handler ${providerName}/${actionName}: ${err.message}`);
                 actionMeta.description += ` (Error loading handler: ${err.message})`;

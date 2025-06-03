@@ -16,6 +16,83 @@ const ArgsSchema = z.object({
   ]).describe("The ID of the WooCommerce order to retrieve.")
 });
 
+// Zod Schema for a WooCommerce Address
+const AddressSchema = z.object({
+  first_name: z.string().optional(),
+  last_name: z.string().optional(),
+  company: z.string().optional(),
+  address_1: z.string().optional(),
+  address_2: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  postcode: z.string().optional(),
+  country: z.string().optional(),
+  email: z.string().email().optional(),
+  phone: z.string().optional(),
+}).passthrough().nullable();
+
+// Zod Schema for WooCommerce Line Items
+const LineItemSchema = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  product_id: z.number().int().optional(),
+  variation_id: z.number().int().optional(),
+  quantity: z.number().int(), // Typically integer
+  total: z.string(), // Monetary value as string
+  sku: z.string().optional(),
+  price: z.string(), // Monetary value as string (price per unit)
+}).passthrough();
+
+// Zod Schema for WooCommerce Meta Data
+const MetaDataSchema = z.object({
+  id: z.number().int().optional(),
+  key: z.string(),
+  value: z.any(), // Can be any type, including objects or arrays
+});
+
+// Zod Schema for the Output (WooCommerce Order)
+const OutputSchema = z.object({
+  id: z.number().int(),
+  parent_id: z.number().int().optional().nullable(), // For refunds or related orders
+  status: z.string(),
+  currency: z.string(),
+  version: z.string().optional(),
+  prices_include_tax: z.boolean().optional(),
+  date_created: z.string(), // ISO8601 date string
+  date_modified: z.string(), // ISO8601 date string
+  discount_total: z.string(),
+  discount_tax: z.string(),
+  shipping_total: z.string(),
+  shipping_tax: z.string(),
+  cart_tax: z.string(),
+  total: z.string(), // Grand total
+  total_tax: z.string(),
+  customer_id: z.number().int().optional().nullable(), // Optional and nullable for guest orders
+  order_key: z.string().optional(),
+  billing: AddressSchema,
+  shipping: AddressSchema,
+  payment_method: z.string().optional(),
+  payment_method_title: z.string().optional(),
+  transaction_id: z.string().optional().nullable(),
+  customer_ip_address: z.string().optional(),
+  customer_user_agent: z.string().optional(),
+  created_via: z.string().optional(),
+  customer_note: z.string().optional().nullable(),
+  date_completed: z.string().nullable().optional(), // ISO8601 date string or null
+  date_paid: z.string().nullable().optional(), // ISO8601 date string or null
+  cart_hash: z.string().optional(),
+  number: z.string(), // Order number, often a string
+  line_items: z.array(LineItemSchema),
+  tax_lines: z.array(z.object({}).passthrough()).optional(), // Define more strictly if needed
+  shipping_lines: z.array(z.object({}).passthrough()).optional(), // Define more strictly if needed
+  fee_lines: z.array(z.object({}).passthrough()).optional(), // Define more strictly if needed
+  coupon_lines: z.array(z.object({}).passthrough()).optional(), // Define more strictly if needed
+  refunds: z.array(z.object({}).passthrough()).optional(), // Define more strictly if needed
+  meta_data: z.array(MetaDataSchema).optional(),
+  // Allows other fields not explicitly defined
+}).passthrough();
+
+
 async function getOrderByIdInternal({ baseUrl, consumerKey, consumerSecret, orderId }) {
   const url = `${baseUrl.replace(/\/$/, '')}/wp-json/wc/v3/orders/${orderId}`;
   const authString = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
@@ -62,7 +139,8 @@ async function handler({ args, auth }) {
 module.exports = {
   handler,
   ArgsSchema,
-  ConnectionSchema, // Add this
+  ConnectionSchema,
+  OutputSchema, // Export the OutputSchema
   meta: {
     description: "Fetches a single order from WooCommerce by its ID.",
     // parameters: ArgsSchema.shape, // server.js /discover logic will use ArgsSchema
