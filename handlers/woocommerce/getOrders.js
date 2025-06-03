@@ -101,9 +101,11 @@ const WooCommerceOrderOutputSchema = z.object({
   meta_data: z.array(WooCommerceMetaDataOutputSchema).optional(),
 }).passthrough();
 
-// The OutputSchema for the handler is an array of Order objects.
-// It's not nullable because an error is thrown on failure, and an empty array is a valid success response.
-const OutputSchema = z.array(WooCommerceOrderOutputSchema);
+// The OutputSchema for the handler is now an object containing an array of Order objects.
+// It's not nullable because an error is thrown on failure, and an empty array (within the 'orders' field) is a valid success response.
+const OutputSchema = z.object({
+  orders: z.array(WooCommerceOrderOutputSchema)
+}).describe("A list of WooCommerce orders.");
 // --- End of Output Schemas ---
 
 // Zod schema for input arguments (filters, etc.)

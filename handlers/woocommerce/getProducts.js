@@ -120,9 +120,14 @@ const WooCommerceProductSchema = z.object({
   _links: z.any().optional(), // Standard WooCommerce _links object
 }).passthrough();
 
-// The OutputSchema can be a single product or an array of products.
+// The OutputSchema is an object containing either a single product or an array of products.
 // It's not nullable because an error is thrown on failure.
-const OutputSchema = z.union([WooCommerceProductSchema, z.array(WooCommerceProductSchema)]);
+const OutputSchema = z.object({
+  products: z.union([
+    WooCommerceProductSchema.describe("A single WooCommerce product."),
+    z.array(WooCommerceProductSchema).describe("An array of WooCommerce products.")
+  ])
+}).describe("Contains either a single product or an array of products.");
 // --- End of Output Schemas ---
 
 // Zod schema for input arguments (product ID or search filters)

@@ -61,9 +61,11 @@ const WordPressPostSchema = z.object({
   _links: z.record(z.string(), z.array(z.object({ href: z.string().url() }).merge(z.any()))).optional().describe("WordPress REST API links object."),
 }).passthrough(); // Allow other fields WordPress or plugins might add
 
-// The OutputSchema for the handler is an array of Post objects.
-// It's not nullable because an error is thrown on failure, and an empty array is a valid success response.
-const OutputSchema = z.array(WordPressPostSchema);
+// The OutputSchema for the handler is now an object containing an array of Post objects.
+// It's not nullable because an error is thrown on failure, and an empty array (within the 'posts' field) is a valid success response.
+const OutputSchema = z.object({
+  posts: z.array(WordPressPostSchema)
+}).describe("A list of WordPress posts.");
 // --- End of Output Schemas ---
 
 async function getPostsInternal({ baseUrl, token, search, categories, tags /*, context, per_page*/ }) {

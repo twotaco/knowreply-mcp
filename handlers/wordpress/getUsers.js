@@ -49,9 +49,11 @@ const WordPressUserSchema = z.object({
   _links: z.record(z.string(), z.array(z.object({ href: z.string().url() }).merge(z.any()))).optional().describe("WordPress REST API links object."),
 }).passthrough(); // Allow other fields WordPress or plugins might add
 
-// The OutputSchema for the handler is an array of User objects.
-// It's not nullable because an error is thrown on failure, and an empty array is a valid success response.
-const OutputSchema = z.array(WordPressUserSchema);
+// The OutputSchema for the handler is now an object containing an array of User objects.
+// It's not nullable because an error is thrown on failure, and an empty array (within the 'users' field) is a valid success response.
+const OutputSchema = z.object({
+  users: z.array(WordPressUserSchema)
+}).describe("A list of WordPress users.");
 // --- End of Output Schemas ---
 
 async function getUsersInternal({ baseUrl, token, email, search /*, roles, slug, context*/ }) {
