@@ -290,8 +290,8 @@ The `GET /discover` endpoint is the authoritative source for available actions a
     ```
 
 #### WooCommerce `createOrderNote` (Live)
--   **Purpose**: Adds a private note to an existing order.
--   **Args**: `{"orderId": 123, "note": "Customer requested an update."}`
+-   **Purpose**: Adds a note to an existing order. Can be private (default) or customer-visible.
+-   **Args**: `{"orderId": 123, "note": "Customer requested an update.", "customer_note": false}` (Set `customer_note: true` to make the note visible to the customer, defaults to `false` for a private note)
 -   **Auth**: `{"baseUrl": "https://yourstore.com", "consumerKey": "ck_xxx", "consumerSecret": "cs_xxx"}`
 -   **Example `curl` (local):**
     ```bash
@@ -299,7 +299,11 @@ The `GET /discover` endpoint is the authoritative source for available actions a
     -H "Content-Type: application/json" \
     -H "x-internal-api-key: YOUR_FALLBACK_API_KEY_HERE" \
     -d '{
-      "args": { "orderId": 123, "note": "Customer requested an update." },
+      "args": {
+        "orderId": 123,
+        "note": "Your order update: dispatched.",
+        "customer_note": true
+      },
       "auth": {
         "baseUrl": "https://yourstore.com",
         "consumerKey": "ck_xxxx",
