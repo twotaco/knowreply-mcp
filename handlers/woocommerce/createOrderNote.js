@@ -30,7 +30,7 @@ const ArgsSchema = z.object({
     z.string().min(1, { message: "Order ID cannot be empty if a string" })
   ]).describe("The ID of the WooCommerce order to add a note to."),
   note: z.string().min(1, { message: "Note content cannot be empty" }).describe("The content of the order note."),
-  customer_note: z.boolean().optional().default(false).describe("Set to true if the note is for the customer, false for a private note. Defaults to false.")
+  customer_note: z.boolean().optional().default(true).describe("Set to true to have the order note visible with the customer in their order details page, false for a private note for internal staff only. Defaults to true.")
 });
 
 // Added customer_note to the destructuring and payload
