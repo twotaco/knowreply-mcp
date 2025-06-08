@@ -110,19 +110,18 @@ const OutputSchema = z.object({
 
 // Zod schema for input arguments (filters, etc.)
 const ArgsSchema = z.object({
-  email: z.string().email({ message: "Invalid email format." }).optional().describe("Note: This email field is NOT used for direct API filtering of orders. Use 'customerId' for strict customer filtering or 'search' with an email string for a broader search."),
   status: z.string().optional().describe("e.g., 'processing', 'completed', 'on-hold'"),
-  search: z.string().optional().describe("Can be used for order number or customer email"),
+  search: z.string().optional().describe("Can be used for order number or customer email (for a broad, non-strict search)."),
   customerId: z.union([
     z.number().int().positive(),
     z.string().min(1) // Ensures non-empty string if string
-  ]).optional().describe("The WooCommerce customer ID.")
+  ]).optional().describe("The WooCommerce customer ID (for strict customer filtering).")
 });
 
-async function getOrdersInternal({ baseUrl, consumerKey, consumerSecret, email, status, search, customerId }) {
-  console.log('[WooCommerce.getOrders] getOrdersInternal called with - Email:', email, 'Status:', status, 'Search:', search, 'CustomerID:', customerId);
+async function getOrdersInternal({ baseUrl, consumerKey, consumerSecret, status, search, customerId }) {
+  console.log('[WooCommerce.getOrders] getOrdersInternal called with - Status:', status, 'Search:', search, 'CustomerID:', customerId);
   const params = {};
-  // if (email) params.email = email; // Removed as per requirement
+  // if (email) params.email = email; // Already removed, confirmed
   if (status) params.status = status;
   if (search) params.search = search;
   if (customerId) params.customer = customerId;
