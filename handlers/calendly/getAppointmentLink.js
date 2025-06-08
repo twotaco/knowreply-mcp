@@ -1,5 +1,10 @@
 const z = require('zod');
 
+// Schema for Calendly Connection
+const ConnectionSchema = z.object({
+  calendly_api_token: z.string().min(1, { message: "Calendly API token cannot be empty." })
+}).describe("Schema for storing Calendly connection parameters, primarily the API token.");
+
 // Zod Schemas for validation
 const ArgsSchema = z.object({
   event_type_uuid: z.string().min(1, { message: "Event Type UUID cannot be empty." }),
@@ -16,9 +21,11 @@ const ArgsSchema = z.object({
   // prefill_custom_answers: z.record(z.string()).optional() // e.g. { "a1": "value1" }
 });
 
-const AuthSchema = z.object({
-  token: z.string().min(1, { message: "Calendly API token cannot be empty." })
-});
+// REMOVE the AuthSchema or ensure it doesn't ask for the token anymore.
+// For now, let's assume no other auth fields are needed directly in the call for these actions.
+// const AuthSchema = z.object({
+//   token: z.string().min(1, { message: "Calendly API token cannot be empty." })
+// });
 
 // Mock data
 const mockEventTypesDb = {
@@ -78,12 +85,12 @@ async function _mockCalendlyApi_createSchedulingLink({ apiKey, ownerUri, maxEven
   return { resource: schedulingLinkResource };
 }
 
-async function handleGetAppointmentLink({ args, auth }) {
+async function handleGetAppointmentLink({ args, auth }) { // auth might now contain auth.connection
   console.log('Executing MCP: calendly.getAppointmentLink');
 
   const parsedArgs = ArgsSchema.safeParse(args);
   if (!parsedArgs.success) {
-    console.warn('MCP: calendly.getAppointmentLink - Invalid arguments:', parsedArgs.error.flatten().fieldErrors);
+    // ... error handling ...
     return {
       success: false,
       message: "Invalid arguments.",
@@ -92,25 +99,31 @@ async function handleGetAppointmentLink({ args, auth }) {
     };
   }
 
-  const parsedAuth = AuthSchema.safeParse(auth);
-  if (!parsedAuth.success) {
-    console.warn('MCP: calendly.getAppointmentLink - Invalid auth:', parsedAuth.error.flatten().fieldErrors);
+  // Assuming the validated connection object is passed in auth.connection by the MCP server
+  const calendlyApiKey = auth?.connection?.calendly_api_token;
+  if (!calendlyApiKey) {
+    console.warn('MCP: calendly.getAppointmentLink - Calendly API token not found in connection.');
     return {
       success: false,
-      message: "Invalid auth information (Calendly API token).",
-      errors: parsedAuth.error.flatten().fieldErrors,
+      message: "Calendly API token not found in connection configuration.",
+      errors: { connection: "Calendly API token is missing." }, // Or a more structured error
       data: null
     };
   }
 
-  const { event_type_uuid } = parsedArgs.data;
-  const { token: apiKey } = parsedAuth.data;
+  // Use calendlyApiKey instead of the old auth.token
+  console.log('Using Calendly API token from connection (simulated use):', calendlyApiKey ? calendlyApiKey.substring(0,5) + '...' : 'No API key provided');
 
-  console.log('Received auth token (simulated use for Calendly API):', apiKey ? apiKey.substring(0,5) + '...' : 'No API key provided');
+  const { event_type_uuid } = parsedArgs.data;
 
   try {
-    // Step 1: (Implicit) Validate event_type_uuid exists.
-    // In a real scenario, we might call GET /event_types/{event_type_uuid}
+    // ... (rest of the try block remains largely the same, but uses 'calendlyApiKey')
+    // Example modification for an internal mock call:
+    // const schedulingLinkResult = await _mockCalendlyApi_createSchedulingLink({
+    //   apiKey: calendlyApiKey, // Pass the key from connection
+    //   ownerUri: ownerUri,
+    // });
+
     // For this mock, we'll directly use the provided event_type_uuid to construct the owner URI.
     const targetEventType = mockEventTypesDb[event_type_uuid];
     if (!targetEventType) {
@@ -132,13 +145,9 @@ async function handleGetAppointmentLink({ args, auth }) {
 
     const ownerUri = `https://api.calendly.com/event_types/${event_type_uuid}`;
 
-    // Step 2: Create a Scheduling Link
-    // The issue mentions "Use the first result (or filter for a desired one)" from listing event types.
-    // Since we're taking event_type_uuid as direct input, we skip listing and directly use it.
     const schedulingLinkResult = await _mockCalendlyApi_createSchedulingLink({
-      apiKey,
+      apiKey: calendlyApiKey, // Use the token from connection
       ownerUri: ownerUri,
-      // maxEventCount: parsedArgs.data.max_event_count // if we add this to ArgsSchema
     });
 
     if (schedulingLinkResult === "mock_api_error_event_type_not_found_or_inactive") {
@@ -175,11 +184,16 @@ async function handleGetAppointmentLink({ args, auth }) {
 }
 
 module.exports = {
+  ConnectionSchema, // Export the new ConnectionSchema
   handler: handleGetAppointmentLink,
   ArgsSchema: ArgsSchema,
-  AuthSchema: AuthSchema,
+  // AuthSchema: AuthSchema, // Remove AuthSchema from exports if it's no longer used
   meta: {
-    description: "Creates a new one-time scheduling link for a specific Calendly event type.",
-    authRequirements: "Requires a Calendly API token." // General note for discovery
+    description: "Creates a new one-time scheduling link for a specific Calendly event type. Uses API token from connection.",
+    // authRequirements: "Requires a Calendly API token." // This might be redundant if ConnectionSchema is primary
   }
 };
+
+// Also, update the mock API functions if they directly reference 'auth.token'
+// For example, _mockCalendlyApi_createSchedulingLink already takes apiKey as a parameter, which is good.
+// Just ensure it's called with the token from auth.connection.calendly_api_token.

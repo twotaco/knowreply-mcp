@@ -7,9 +7,10 @@ const ArgsSchema = z.object({
   reason: z.string().optional().default("Cancellation requested by user.")
 });
 
-const AuthSchema = z.object({
-  token: z.string().min(1, { message: "Calendly API token cannot be empty." })
-});
+// REMOVE or comment out AuthSchema
+// const AuthSchema = z.object({
+//   token: z.string().min(1, { message: "Calendly API token cannot be empty." })
+// });
 
 // Mock data: This should ideally be shared or a more robust mock system used.
 // For now, define it here, ensuring some events match viewAppointmentDetails.js for consistency.
@@ -129,29 +130,31 @@ async function handleCancelAppointment({ args, auth }) {
     };
   }
 
-  const parsedAuth = AuthSchema.safeParse(auth);
-  if (!parsedAuth.success) {
-    console.warn('MCP: calendly.cancelAppointment - Invalid auth:', parsedAuth.error.flatten().fieldErrors);
+  // Retrieve token from connection
+  const calendlyApiKey = auth?.connection?.calendly_api_token;
+  if (!calendlyApiKey) {
+    console.warn('MCP: calendly.cancelAppointment - Calendly API token not found in connection.');
     return {
       success: false,
-      message: "Invalid auth information (Calendly API token).",
-      errors: parsedAuth.error.flatten().fieldErrors,
+      message: "Calendly API token not found in connection configuration.",
+      errors: { connection: "Calendly API token is missing." },
       data: null
     };
   }
 
-  const { invitee_email, reason, event_uuid: specificEventUuid } = parsedArgs.data;
-  const { token: apiKey } = parsedAuth.data;
+  console.log('Using Calendly API token from connection (simulated use):', calendlyApiKey ? calendlyApiKey.substring(0,5) + '...' : 'No API key provided');
 
-  console.log('Received auth token (simulated use for Calendly API):', apiKey ? apiKey.substring(0,5) + '...' : 'No API key provided');
+  const { invitee_email, reason, event_uuid: specificEventUuid } = parsedArgs.data;
 
   try {
     let eventToCancelUuid = specificEventUuid;
     let eventDetailsForMessage = {};
 
     if (!eventToCancelUuid) {
-      // Step 1: Find scheduled event if UUID not provided
-      const events = await _mockCalendlyApi_listScheduledEventsForCancel({ apiKey, inviteeEmail: invitee_email });
+      const events = await _mockCalendlyApi_listScheduledEventsForCancel({
+        apiKey: calendlyApiKey, // Use token from connection
+        inviteeEmail: invitee_email
+      });
       const activeUpcomingEvents = events
         .filter(event => event.status === "active" && new Date(event.start_time) > new Date())
         .sort((a, b) => new Date(a.start_time) - new Date(b.start_time)); // Sort by soonest
@@ -179,12 +182,15 @@ async function handleCancelAppointment({ args, auth }) {
         }
     }
 
-    if (!eventToCancelUuid) { // Should be caught by specificEventUuid check or activeUpcomingEvents check
+    if (!eventToCancelUuid) {
         return { success: false, message: "Could not determine which event to cancel.", data: null };
     }
 
-    // Step 2: Cancel the event
-    const cancelResult = await _mockCalendlyApi_cancelEvent({ apiKey, eventUuid: eventToCancelUuid, reason });
+    const cancelResult = await _mockCalendlyApi_cancelEvent({
+      apiKey: calendlyApiKey, // Use token from connection
+      eventUuid: eventToCancelUuid,
+      reason
+    });
 
     if (cancelResult === "mock_api_error_event_not_found") {
       // This might happen if event_uuid was provided but is invalid, or a race condition if event was deleted.
@@ -231,9 +237,9 @@ async function handleCancelAppointment({ args, auth }) {
 module.exports = {
   handler: handleCancelAppointment,
   ArgsSchema: ArgsSchema,
-  AuthSchema: AuthSchema,
+  // AuthSchema: AuthSchema, // Ensure this is removed
   meta: {
-    description: "Cancels a scheduled Calendly event for an invitee. Can either cancel a specific event by UUID or the soonest upcoming event for an email.",
-    authRequirements: "Requires a Calendly API token."
+    description: "Cancels a scheduled Calendly event. Uses API token from connection.",
+    // authRequirements might be removed
   }
 };

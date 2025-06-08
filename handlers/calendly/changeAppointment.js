@@ -7,9 +7,10 @@ const ArgsSchema = z.object({
   // However, event_uuid is more precise for changing a specific appointment.
 });
 
-const AuthSchema = z.object({
-  token: z.string().min(1, { message: "Calendly API token cannot be empty." })
-});
+// REMOVE or comment out AuthSchema
+// const AuthSchema = z.object({
+//   token: z.string().min(1, { message: "Calendly API token cannot be empty." })
+// });
 
 // Re-use or adapt mock data from viewAppointmentDetails.js for consistency
 // For this specific handler, we only need to look up an event by its UUID.
@@ -68,24 +69,27 @@ async function handleChangeAppointment({ args, auth }) {
     };
   }
 
-  const parsedAuth = AuthSchema.safeParse(auth);
-  if (!parsedAuth.success) {
-    console.warn('MCP: calendly.changeAppointment - Invalid auth:', parsedAuth.error.flatten().fieldErrors);
+  // Retrieve token from connection
+  const calendlyApiKey = auth?.connection?.calendly_api_token;
+  if (!calendlyApiKey) {
+    console.warn('MCP: calendly.changeAppointment - Calendly API token not found in connection.');
     return {
       success: false,
-      message: "Invalid auth information (Calendly API token).",
-      errors: parsedAuth.error.flatten().fieldErrors,
+      message: "Calendly API token not found in connection configuration.",
+      errors: { connection: "Calendly API token is missing." },
       data: null
     };
   }
 
-  const { event_uuid } = parsedArgs.data;
-  const { token: apiKey } = parsedAuth.data;
+  console.log('Using Calendly API token from connection (simulated use):', calendlyApiKey ? calendlyApiKey.substring(0,5) + '...' : 'No API key provided');
 
-  console.log('Received auth token (simulated use for Calendly API):', apiKey ? apiKey.substring(0,5) + '...' : 'No API key provided');
+  const { event_uuid } = parsedArgs.data;
 
   try {
-    const eventResult = await _mockCalendlyApi_getScheduledEvent({ apiKey, eventUuid: event_uuid });
+    const eventResult = await _mockCalendlyApi_getScheduledEvent({
+      apiKey: calendlyApiKey, // Use token from connection
+      eventUuid: event_uuid
+    });
 
     if (eventResult === "mock_api_error_event_not_found") {
       return {
@@ -153,9 +157,9 @@ async function handleChangeAppointment({ args, auth }) {
 module.exports = {
   handler: handleChangeAppointment,
   ArgsSchema: ArgsSchema,
-  AuthSchema: AuthSchema,
+  // AuthSchema: AuthSchema, // Ensure this is removed
   meta: {
-    description: "Provides the reschedule link for a specific Calendly event, allowing the user to change their appointment.",
-    authRequirements: "Requires a Calendly API token."
+    description: "Provides the reschedule link for a specific Calendly event, using API token from connection.",
+    // authRequirements might be removed
   }
 };

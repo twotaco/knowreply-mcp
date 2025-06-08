@@ -10,9 +10,10 @@ const ArgsSchema = z.object({
   // status: z.enum(['active', 'canceled']).optional(),
 });
 
-const AuthSchema = z.object({
-  token: z.string().min(1, { message: "Calendly API token cannot be empty." })
-});
+// REMOVE or comment out AuthSchema
+// const AuthSchema = z.object({
+//   token: z.string().min(1, { message: "Calendly API token cannot be empty." })
+// });
 
 // Mock data for Calendly scheduled events
 const mockScheduledEventsDb = {
@@ -129,30 +130,26 @@ async function handleViewAppointmentDetails({ args, auth }) {
     };
   }
 
-  const parsedAuth = AuthSchema.safeParse(auth);
-  if (!parsedAuth.success) {
-    console.warn('MCP: calendly.viewAppointmentDetails - Invalid auth:', parsedAuth.error.flatten().fieldErrors);
+  // Retrieve token from connection
+  const calendlyApiKey = auth?.connection?.calendly_api_token;
+  if (!calendlyApiKey) {
+    console.warn('MCP: calendly.viewAppointmentDetails - Calendly API token not found in connection.');
     return {
       success: false,
-      message: "Invalid auth information (Calendly API token).",
-      errors: parsedAuth.error.flatten().fieldErrors,
+      message: "Calendly API token not found in connection configuration.",
+      errors: { connection: "Calendly API token is missing." },
       data: null
     };
   }
 
-  const { invitee_email } = parsedArgs.data;
-  const { token: apiKey } = parsedAuth.data;
+  console.log('Using Calendly API token from connection (simulated use):', calendlyApiKey ? calendlyApiKey.substring(0,5) + '...' : 'No API key provided');
 
-  console.log('Received auth token (simulated use for Calendly API):', apiKey ? apiKey.substring(0,5) + '...' : 'No API key provided');
+  const { invitee_email } = parsedArgs.data;
 
   try {
-    // For this use case, we typically want 'active' events.
-    // The problem description says "Get event time, name, location, organizer, and link to the event."
-    // It doesn't specify filtering out past events, so we'll return all active ones.
     const eventsResult = await _mockCalendlyApi_listScheduledEvents({
-      apiKey,
+      apiKey: calendlyApiKey, // Use token from connection
       inviteeEmail: invitee_email,
-      // status: 'active' // Could be made a parameter or fixed depending on exact need
     });
 
     if (eventsResult && Array.isArray(eventsResult.collection)) {
@@ -200,9 +197,9 @@ async function handleViewAppointmentDetails({ args, auth }) {
 module.exports = {
   handler: handleViewAppointmentDetails,
   ArgsSchema: ArgsSchema,
-  AuthSchema: AuthSchema,
+  // AuthSchema: AuthSchema, // Ensure this is removed if it existed
   meta: {
-    description: "Retrieves details of scheduled Calendly events for a given invitee email.",
-    authRequirements: "Requires a Calendly API token."
+    description: "Retrieves details of scheduled Calendly events for a given invitee email, using API token from connection.",
+    // authRequirements might be removed if ConnectionSchema handles this at provider level discovery
   }
 };
