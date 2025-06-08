@@ -1,9 +1,6 @@
 const z = require('zod');
 
-// Schema for Calendly Connection
-const ConnectionSchema = z.object({
-  calendly_api_token: z.string().min(1, { message: "Calendly API token cannot be empty." })
-}).describe("Schema for storing Calendly connection parameters, primarily the API token.");
+// ConnectionSchema REMOVED from here
 
 // Zod Schemas for validation
 const ArgsSchema = z.object({
@@ -184,16 +181,10 @@ async function handleGetAppointmentLink({ args, auth }) { // auth might now cont
 }
 
 module.exports = {
-  ConnectionSchema, // Export the new ConnectionSchema
+  // ConnectionSchema REMOVED from exports
   handler: handleGetAppointmentLink,
   ArgsSchema: ArgsSchema,
-  // AuthSchema: AuthSchema, // Remove AuthSchema from exports if it's no longer used
   meta: {
     description: "Creates a new one-time scheduling link for a specific Calendly event type. Uses API token from connection.",
-    // authRequirements: "Requires a Calendly API token." // This might be redundant if ConnectionSchema is primary
   }
 };
-
-// Also, update the mock API functions if they directly reference 'auth.token'
-// For example, _mockCalendlyApi_createSchedulingLink already takes apiKey as a parameter, which is good.
-// Just ensure it's called with the token from auth.connection.calendly_api_token.

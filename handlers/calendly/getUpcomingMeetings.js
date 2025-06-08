@@ -1,14 +1,20 @@
 const z = require('zod');
 
-// Zod Schemas for validation
+// Add ConnectionSchema definition HERE
+const ConnectionSchema = z.object({
+  calendly_api_token: z.string().min(1, { message: "Calendly API token cannot be empty." })
+}).describe("Schema for storing Calendly connection parameters, primarily the API token.");
+
+// Existing Zod Schemas for validation
 const ArgsSchema = z.object({
   email: z.string().email({ message: "Invalid email format for invitee." })
   // Optionally, could add count, page_token, sort, status filters as per Calendly API
 });
 
-const AuthSchema = z.object({
-  token: z.string().min(1, { message: "Calendly API token cannot be empty." })
-});
+// REMOVE or comment out the old AuthSchema
+// const AuthSchema = z.object({
+//   token: z.string().min(1, { message: "Calendly API token cannot be empty." })
+// });
 
 // Mock data for Calendly events (can reuse/extend from rescheduleMeeting)
 const mockCalendlyEventsDbForListing = {
@@ -84,24 +90,27 @@ async function handleGetUpcomingMeetings({ args, auth }) {
     };
   }
 
-  const parsedAuth = AuthSchema.safeParse(auth);
-  if (!parsedAuth.success) {
-    console.warn('MCP: calendly.getUpcomingMeetings - Invalid auth:', parsedAuth.error.flatten().fieldErrors);
+  // Retrieve token from connection
+  const calendlyApiKey = auth?.connection?.calendly_api_token;
+  if (!calendlyApiKey) {
+    console.warn('MCP: calendly.getUpcomingMeetings - Calendly API token not found in connection.');
     return {
       success: false,
-      message: "Invalid auth information (Calendly API token).",
-      errors: parsedAuth.error.flatten().fieldErrors,
+      message: "Calendly API token not found in connection configuration.",
+      errors: { connection: "Calendly API token is missing." },
       data: null
     };
   }
 
-  const { email } = parsedArgs.data;
-  const { token: apiKey } = parsedAuth.data;
+  console.log('Using Calendly API token from connection (simulated use):', calendlyApiKey ? calendlyApiKey.substring(0,5) + '...' : 'No API key provided');
 
-  console.log('Received auth token (simulated use for Calendly API):', apiKey ? apiKey.substring(0,5) + '...' : 'No API key provided');
+  const { email } = parsedArgs.data;
 
   try {
-    const events = await _mockCalendlyApi_getUpcomingMeetings({ email, apiKey });
+    const events = await _mockCalendlyApi_getUpcomingMeetings({
+      email,
+      apiKey: calendlyApiKey // Use token from connection
+    });
 
     if (events === "mock_api_error_invitee_not_found") {
       return {
@@ -150,7 +159,11 @@ async function handleGetUpcomingMeetings({ args, auth }) {
 }
 
 module.exports = {
+  ConnectionSchema, // Keep exporting ConnectionSchema from this file
   handler: handleGetUpcomingMeetings,
   ArgsSchema: ArgsSchema,
-  AuthSchema: AuthSchema
+  // AuthSchema: AuthSchema, // Remove old AuthSchema from exports
+  meta: { // Add or update meta description
+    description: "Retrieves upcoming Calendly meetings for a given invitee email, using API token from connection."
+  }
 };
