@@ -10,10 +10,7 @@ const ArgsSchema = z.object({
   // status: z.enum(['active', 'canceled']).optional(),
 });
 
-// REMOVE or comment out AuthSchema
-// const AuthSchema = z.object({
-//   token: z.string().min(1, { message: "Calendly API token cannot be empty." })
-// });
+const ConnectionSchema = z.object({ calendly_api_token: z.string().min(1, { message: "Calendly API token cannot be empty." }) }).describe("Schema for storing Calendly connection parameters, primarily the API token.");
 
 // Mock data for Calendly scheduled events
 const mockScheduledEventsDb = {
@@ -197,9 +194,9 @@ async function handleViewAppointmentDetails({ args, auth }) {
 module.exports = {
   handler: handleViewAppointmentDetails,
   ArgsSchema: ArgsSchema,
-  // AuthSchema: AuthSchema, // Ensure this is removed if it existed
+  ConnectionSchema: ConnectionSchema,
   meta: {
-    description: "Retrieves details of scheduled Calendly events for a given invitee email, using API token from connection.",
-    // authRequirements might be removed if ConnectionSchema handles this at provider level discovery
+    description: "Views the details of a specific Calendly appointment. Uses API token from connection.",
+    // authRequirements might be removed
   }
 };

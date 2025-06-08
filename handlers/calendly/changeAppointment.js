@@ -7,10 +7,7 @@ const ArgsSchema = z.object({
   // However, event_uuid is more precise for changing a specific appointment.
 });
 
-// REMOVE or comment out AuthSchema
-// const AuthSchema = z.object({
-//   token: z.string().min(1, { message: "Calendly API token cannot be empty." })
-// });
+const ConnectionSchema = z.object({ calendly_api_token: z.string().min(1, { message: "Calendly API token cannot be empty." }) }).describe("Schema for storing Calendly connection parameters, primarily the API token.");
 
 // Re-use or adapt mock data from viewAppointmentDetails.js for consistency
 // For this specific handler, we only need to look up an event by its UUID.
@@ -157,7 +154,7 @@ async function handleChangeAppointment({ args, auth }) {
 module.exports = {
   handler: handleChangeAppointment,
   ArgsSchema: ArgsSchema,
-  // AuthSchema: AuthSchema, // Ensure this is removed
+  ConnectionSchema: ConnectionSchema,
   meta: {
     description: "Provides the reschedule link for a specific Calendly event, using API token from connection.",
     // authRequirements might be removed

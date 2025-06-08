@@ -8,9 +8,7 @@ const ArgsSchema = z.object({
   // This mock simplifies it to just eventId and newTime.
 });
 
-const AuthSchema = z.object({
-  token: z.string().min(1, { message: "Calendly API token cannot be empty." })
-});
+const ConnectionSchema = z.object({ calendly_api_token: z.string().min(1, { message: "Calendly API token cannot be empty." }) }).describe("Schema for storing Calendly connection parameters, primarily the API token.");
 
 // Mock data for Calendly events
 const mockCalendlyEventsDb = {
@@ -90,21 +88,21 @@ async function handleRescheduleMeeting({ args, auth }) {
     };
   }
 
-  const parsedAuth = AuthSchema.safeParse(auth);
-  if (!parsedAuth.success) {
-    console.warn('MCP: calendly.rescheduleMeeting - Invalid auth:', parsedAuth.error.flatten().fieldErrors);
+  // Retrieve token from connection
+  const calendlyApiKey = auth?.connection?.calendly_api_token;
+  if (!calendlyApiKey) {
+    console.warn('MCP: calendly.rescheduleMeeting - Calendly API token not found in connection.');
     return {
       success: false,
-      message: "Invalid auth information (Calendly API token).",
-      errors: parsedAuth.error.flatten().fieldErrors,
+      message: "Calendly API token not found in connection configuration.",
+      errors: { connection: "Calendly API token is missing." },
       data: null
     };
   }
 
   const { eventId, newTime } = parsedArgs.data;
-  const { token: apiKey } = parsedAuth.data;
-
-  console.log('Received auth token (simulated use for Calendly API):', apiKey ? apiKey.substring(0,5) + '...' : 'No API key provided');
+  // Use calendlyApiKey from connection
+  console.log('Using Calendly API token from connection (simulated use):', calendlyApiKey ? calendlyApiKey.substring(0,5) + '...' : 'No API key provided');
 
   try {
     // Validate newTime is in the future (basic check)
@@ -116,7 +114,7 @@ async function handleRescheduleMeeting({ args, auth }) {
         };
     }
 
-    const rescheduleResult = await _mockCalendlyApi_rescheduleMeeting({ eventId, newTime, apiKey });
+    const rescheduleResult = await _mockCalendlyApi_rescheduleMeeting({ eventId, newTime, apiKey: calendlyApiKey });
 
     if (rescheduleResult === "mock_api_error_event_not_found") {
       return {
@@ -165,5 +163,8 @@ async function handleRescheduleMeeting({ args, auth }) {
 module.exports = {
   handler: handleRescheduleMeeting,
   ArgsSchema: ArgsSchema,
-  AuthSchema: AuthSchema
+  ConnectionSchema: ConnectionSchema,
+  meta: {
+    description: "Reschedules an existing Calendly meeting. Uses API token from connection."
+  }
 };

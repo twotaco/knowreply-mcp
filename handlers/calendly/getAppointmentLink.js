@@ -1,7 +1,5 @@
 const z = require('zod');
 
-// ConnectionSchema REMOVED from here
-
 // Zod Schemas for validation
 const ArgsSchema = z.object({
   event_type_uuid: z.string().min(1, { message: "Event Type UUID cannot be empty." }),
@@ -18,11 +16,7 @@ const ArgsSchema = z.object({
   // prefill_custom_answers: z.record(z.string()).optional() // e.g. { "a1": "value1" }
 });
 
-// REMOVE the AuthSchema or ensure it doesn't ask for the token anymore.
-// For now, let's assume no other auth fields are needed directly in the call for these actions.
-// const AuthSchema = z.object({
-//   token: z.string().min(1, { message: "Calendly API token cannot be empty." })
-// });
+const ConnectionSchema = z.object({ calendly_api_token: z.string().min(1, { message: "Calendly API token cannot be empty." }) }).describe("Schema for storing Calendly connection parameters, primarily the API token.");
 
 // Mock data
 const mockEventTypesDb = {
@@ -96,19 +90,18 @@ async function handleGetAppointmentLink({ args, auth }) { // auth might now cont
     };
   }
 
-  // Assuming the validated connection object is passed in auth.connection by the MCP server
+  // Retrieve token from connection
   const calendlyApiKey = auth?.connection?.calendly_api_token;
   if (!calendlyApiKey) {
     console.warn('MCP: calendly.getAppointmentLink - Calendly API token not found in connection.');
     return {
       success: false,
       message: "Calendly API token not found in connection configuration.",
-      errors: { connection: "Calendly API token is missing." }, // Or a more structured error
+      errors: { connection: "Calendly API token is missing." },
       data: null
     };
   }
 
-  // Use calendlyApiKey instead of the old auth.token
   console.log('Using Calendly API token from connection (simulated use):', calendlyApiKey ? calendlyApiKey.substring(0,5) + '...' : 'No API key provided');
 
   const { event_type_uuid } = parsedArgs.data;
@@ -181,9 +174,9 @@ async function handleGetAppointmentLink({ args, auth }) { // auth might now cont
 }
 
 module.exports = {
-  // ConnectionSchema REMOVED from exports
   handler: handleGetAppointmentLink,
   ArgsSchema: ArgsSchema,
+  ConnectionSchema: ConnectionSchema,
   meta: {
     description: "Creates a new one-time scheduling link for a specific Calendly event type. Uses API token from connection.",
   }

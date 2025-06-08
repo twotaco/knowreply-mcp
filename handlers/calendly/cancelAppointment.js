@@ -7,10 +7,7 @@ const ArgsSchema = z.object({
   reason: z.string().optional().default("Cancellation requested by user.")
 });
 
-// REMOVE or comment out AuthSchema
-// const AuthSchema = z.object({
-//   token: z.string().min(1, { message: "Calendly API token cannot be empty." })
-// });
+const ConnectionSchema = z.object({ calendly_api_token: z.string().min(1, { message: "Calendly API token cannot be empty." }) }).describe("Schema for storing Calendly connection parameters, primarily the API token.");
 
 // Mock data: This should ideally be shared or a more robust mock system used.
 // For now, define it here, ensuring some events match viewAppointmentDetails.js for consistency.
@@ -237,7 +234,7 @@ async function handleCancelAppointment({ args, auth }) {
 module.exports = {
   handler: handleCancelAppointment,
   ArgsSchema: ArgsSchema,
-  // AuthSchema: AuthSchema, // Ensure this is removed
+  ConnectionSchema: ConnectionSchema,
   meta: {
     description: "Cancels a scheduled Calendly event. Uses API token from connection.",
     // authRequirements might be removed
