@@ -110,7 +110,7 @@ const OutputSchema = z.object({
 
 // Zod schema for input arguments (filters, etc.)
 const ArgsSchema = z.object({
-  email: z.string().email({ message: "Invalid email format." }).optional(),
+  email: z.string().email({ message: "Invalid email format." }).optional().describe("Note: This email field is NOT used for direct API filtering of orders. Use 'customerId' for strict customer filtering or 'search' with an email string for a broader search."),
   status: z.string().optional().describe("e.g., 'processing', 'completed', 'on-hold'"),
   search: z.string().optional().describe("Can be used for order number or customer email"),
   customerId: z.union([
@@ -120,14 +120,23 @@ const ArgsSchema = z.object({
 });
 
 async function getOrdersInternal({ baseUrl, consumerKey, consumerSecret, email, status, search, customerId }) {
+  console.log('[WooCommerce.getOrders] getOrdersInternal called with - Email:', email, 'Status:', status, 'Search:', search, 'CustomerID:', customerId);
   const params = {};
-  if (email) params.email = email;
+  // if (email) params.email = email; // Removed as per requirement
   if (status) params.status = status;
   if (search) params.search = search;
   if (customerId) params.customer = customerId;
 
+  if (params.status || params.search || params.customer) {
+    params.per_page = 100;
+  }
+  if (params.per_page) { console.log('[WooCommerce.getOrders] Applied per_page=100 due to active filters.'); }
+
   const url = `${baseUrl.replace(/\/$/, '')}/wp-json/wc/v3/orders`;
   const authString = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
+
+  console.log('[WooCommerce.getOrders] Making API call to URL:', url);
+  console.log('[WooCommerce.getOrders] API call params:', JSON.stringify(params, null, 2));
 
   try {
     const response = await axios.get(url, {
@@ -137,17 +146,23 @@ async function getOrdersInternal({ baseUrl, consumerKey, consumerSecret, email, 
       },
       params,
     });
+    console.log('[WooCommerce.getOrders] API call successful. Response status:', response.status);
+    console.log('[WooCommerce.getOrders] Raw response data (first 250 chars):', JSON.stringify(response.data).substring(0, 250) + (JSON.stringify(response.data).length > 250 ? '...' : ''));
+    if (Array.isArray(response.data)) { console.log('[WooCommerce.getOrders] Number of orders received:', response.data.length); }
     return response.data;
   } catch (error) {
-    console.error(`Error fetching orders from WooCommerce: ${error.message}`, error.response?.data);
+    console.error(`[WooCommerce.getOrders] Error fetching orders from WooCommerce: ${error.message} for URL: ${url} with params: ${JSON.stringify(params)}`, error.response?.data);
     const errorMessage = error.response?.data?.message || error.message || 'Failed to fetch orders from WooCommerce.';
     throw new Error(errorMessage);
   }
 }
 
 async function handler({ args, auth }) {
+  console.log('[WooCommerce.getOrders] Handler invoked with raw args:', JSON.stringify(args, null, 2));
   const validatedConnection = ConnectionSchema.parse(auth); // Parse auth object for connection details
   const validatedArgs = ArgsSchema.parse(args);           // Parse args object for filters
+  console.log('[WooCommerce.getOrders] Validated args:', JSON.stringify(validatedArgs, null, 2));
+  console.log('[WooCommerce.getOrders] Using Connection - BaseURL:', validatedConnection.baseUrl, 'ConsumerKey:', validatedConnection.consumerKey ? validatedConnection.consumerKey.substring(0, 5) + '...' : 'N/A');
 
   return getOrdersInternal({
     ...validatedConnection, // Spread baseUrl, consumerKey, consumerSecret
@@ -161,7 +176,7 @@ module.exports = {
   ConnectionSchema,
   OutputSchema, // Export the OutputSchema
   meta: {
-    description: "Fetches orders from WooCommerce. Supports filtering by email, status, customer ID, or a general search term.",
+    description: "Fetches orders from WooCommerce. For strict filtering by customer, use 'customerId'. The 'search' field can be used with an email string for a broader, non-strict search. Supports filtering by 'status'.",
     // parameters: ArgsSchema.shape, // server.js /discover logic will use ArgsSchema for parameters
     authRequirements: "Requires WooCommerce Base URL, Consumer Key, and Consumer Secret in the auth object.", // Updated meta
   }

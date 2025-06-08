@@ -66,14 +66,22 @@ const ArgsSchema = z.object({
 });
 
 async function getCustomersInternal({ baseUrl, consumerKey, consumerSecret, email, search }) {
+  console.log('[WooCommerce.getCustomers] getCustomersInternal called with - Email:', email, 'Search:', search);
   const params = {};
   if (email) params.email = email;
   if (search) params.search = search;
+  if (email || search) {
+    params.per_page = 100;
+  }
+  if (params.per_page) { console.log('[WooCommerce.getCustomers] Applied per_page=100 due to active filters.'); }
   // By default, role=customer is often implied or can be set if needed
   // params.role = 'customer';
 
   const url = `${baseUrl.replace(/\/$/, '')}/wp-json/wc/v3/customers`;
   const authString = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
+
+  console.log('[WooCommerce.getCustomers] Making API call to URL:', url);
+  console.log('[WooCommerce.getCustomers] API call params:', JSON.stringify(params, null, 2));
 
   try {
     const response = await axios.get(url, {
@@ -83,17 +91,23 @@ async function getCustomersInternal({ baseUrl, consumerKey, consumerSecret, emai
       },
       params,
     });
+    console.log('[WooCommerce.getCustomers] API call successful. Response status:', response.status);
+    console.log('[WooCommerce.getCustomers] Raw response data (first 250 chars):', JSON.stringify(response.data).substring(0, 250) + (JSON.stringify(response.data).length > 250 ? '...' : ''));
+    if (Array.isArray(response.data)) { console.log('[WooCommerce.getCustomers] Number of customers received:', response.data.length); }
     return response.data; // Returns an array of customer objects
   } catch (error) {
-    console.error(`Error fetching customers from WooCommerce: ${error.message}`, error.response?.data);
+    console.error(`[WooCommerce.getCustomers] Error fetching customers from WooCommerce: ${error.message} for URL: ${url} with params: ${JSON.stringify(params)}`, error.response?.data);
     const errorMessage = error.response?.data?.message || error.message || 'Failed to fetch customers from WooCommerce.';
     throw new Error(errorMessage);
   }
 }
 
 async function handler({ args, auth }) {
+  console.log('[WooCommerce.getCustomers] Handler invoked with raw args:', JSON.stringify(args, null, 2));
   const validatedConnection = ConnectionSchema.parse(auth);
   const validatedArgs = ArgsSchema.parse(args);
+  console.log('[WooCommerce.getCustomers] Validated args:', JSON.stringify(validatedArgs, null, 2));
+  console.log('[WooCommerce.getCustomers] Using Connection - BaseURL:', validatedConnection.baseUrl, 'ConsumerKey:', validatedConnection.consumerKey ? validatedConnection.consumerKey.substring(0, 5) + '...' : 'N/A');
 
   return getCustomersInternal({
     ...validatedConnection, // Spread baseUrl, consumerKey, consumerSecret

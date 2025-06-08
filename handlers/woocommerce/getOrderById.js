@@ -94,9 +94,11 @@ const OutputSchema = z.object({
 
 
 async function getOrderByIdInternal({ baseUrl, consumerKey, consumerSecret, orderId }) {
+  console.log('[WooCommerce.getOrderById] getOrderByIdInternal called with - OrderID:', orderId);
   const url = `${baseUrl.replace(/\/$/, '')}/wp-json/wc/v3/orders/${orderId}`;
   const authString = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
 
+  console.log('[WooCommerce.getOrderById] Making API call to URL:', url);
   try {
     const response = await axios.get(url, {
       headers: {
@@ -104,9 +106,11 @@ async function getOrderByIdInternal({ baseUrl, consumerKey, consumerSecret, orde
         'Content-Type': 'application/json',
       },
     });
+    console.log('[WooCommerce.getOrderById] API call successful. Response status:', response.status);
+    console.log('[WooCommerce.getOrderById] Raw response data (first 250 chars):', JSON.stringify(response.data).substring(0, 250) + (JSON.stringify(response.data).length > 250 ? '...' : ''));
     return response.data; // Returns a single order object
   } catch (error) {
-    console.error(`Error fetching order ${orderId} from WooCommerce: ${error.message}`, error.response?.data);
+    console.error(`[WooCommerce.getOrderById] Error fetching order ${orderId} from WooCommerce for URL: ${url}: ${error.message}`, error.response?.data);
 
     let errorMessage = `Failed to fetch order ${orderId} from WooCommerce.`;
     if (error.response) {
@@ -127,8 +131,11 @@ async function getOrderByIdInternal({ baseUrl, consumerKey, consumerSecret, orde
 }
 
 async function handler({ args, auth }) {
+  console.log('[WooCommerce.getOrderById] Handler invoked with raw args:', JSON.stringify(args, null, 2));
   const validatedConnection = ConnectionSchema.parse(auth);
   const validatedArgs = ArgsSchema.parse(args);
+  console.log('[WooCommerce.getOrderById] Validated args:', JSON.stringify(validatedArgs, null, 2));
+  console.log('[WooCommerce.getOrderById] Using Connection - BaseURL:', validatedConnection.baseUrl, 'ConsumerKey:', validatedConnection.consumerKey ? validatedConnection.consumerKey.substring(0, 5) + '...' : 'N/A');
 
   return getOrderByIdInternal({
     ...validatedConnection, // Spread baseUrl, consumerKey, consumerSecret
